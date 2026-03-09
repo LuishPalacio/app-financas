@@ -1,50 +1,21 @@
-# Welcome to your Expo app 👋
+# 💰 Quimera Finanças - LHS Finanças
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicativo de controle financeiro pessoal e compartilhado desenvolvido com **React Native**, **Expo** e **Supabase**.
 
-## Get started
+## 🚀 Funcionalidades
+- **Autenticação Segura:** Login e cadastro gerenciados via Supabase Auth.
+- **Banco de Dados em Nuvem:** Sincronização em tempo real de transações, contas e metas.
+- **Conta Conjunta (Multi-tenant):** Sistema de parcerias que permite compartilhar contas específicas com outro usuário de forma granular.
+- **Modo Escuro/Claro:** Interface adaptativa conforme a preferência do sistema ou usuário.
+- **Segurança Biométrica:** Proteção de acesso via Digital/FaceID.
 
-1. Install dependencies
+## 🛠️ Tecnologias Utilizadas
+- **Frontend:** React Native (Expo Router)
+- **Backend/DB:** Supabase (PostgreSQL)
+- **Segurança:** Row Level Security (RLS) para isolamento de dados por usuário.
 
-   ```bash
-   npm install
-   ```
+## 👥 Arquitetura de Compartilhamento
+O projeto utiliza uma lógica de parcerias baseada em tabelas relacionais, permitindo que um usuário convide outro para visualizar e editar contas selecionadas, mantendo a privacidade dos dados individuais.
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+Desenvolvido por **Luis Palacio** (Estudante de Ciência da Computação na Braz Cubas)
