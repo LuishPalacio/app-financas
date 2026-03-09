@@ -1,4 +1,4 @@
-# 💰 Quimera Finanças - LHS Finanças
+# 💰 app Finanças - LHS Finanças
 
 Aplicativo de controle financeiro pessoal e compartilhado desenvolvido com **React Native**, **Expo** e **Supabase**.
 
