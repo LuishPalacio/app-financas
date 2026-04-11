@@ -4,7 +4,8 @@ import "react-native-url-polyfill/auto";
 
 // SUBSTITUA AQUI COM OS SEUS DADOS COPIADOS
 const supabaseUrl = "https://qxnfpnabyytdbzdkklet.supabase.co";
-const supabaseAnonKey = "sb_publishable_Fjs0fF6L6epIelSNkbijJA_jDsRfoDp";
+const supabaseAnonKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4bmZwbmFieXl0ZGJ6ZGtrbGV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNDk2OTksImV4cCI6MjA4ODYyNTY5OX0.nfhBEAjwO_KU8AE9ZlO63QlyoSFmxGYedzHvAbVtaxo";
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

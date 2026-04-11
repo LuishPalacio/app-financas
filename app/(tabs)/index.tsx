@@ -1,6 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router"; // <-- ADICIONADO O useRouter
 import React, { useCallback, useState } from "react";
 import {
   Alert,
@@ -78,6 +79,7 @@ const getEstiloBanco = (nome: string, isDark: boolean) => {
 
 export default function Dashboard() {
   const { isDark, session } = useAppTheme();
+  const router = useRouter(); // <-- DECLARAÇÃO DO ROUTER PARA A NAVEGAÇÃO DA IA
 
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
@@ -93,7 +95,33 @@ export default function Dashboard() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
-  const [temParceiro, setTemParceiro] = useState(false); // NOVO: Sabe se tem parceiro
+  const [temParceiro, setTemParceiro] = useState(false);
+
+  // CONTROLE DO MÊS PARA O FLUXO DE CAIXA
+  const [mesAtual, setMesAtual] = useState(new Date());
+
+  const alterarMes = (direcao: number) => {
+    const novoMes = new Date(mesAtual);
+    novoMes.setMonth(novoMes.getMonth() + direcao);
+    setMesAtual(novoMes);
+  };
+
+  // CORREÇÃO ANDROID HERMES
+  const mesesEmPortugues = [
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+  ];
+  const nomeDoMes = `${mesesEmPortugues[mesAtual.getMonth()]} de ${mesAtual.getFullYear()}`;
 
   const [modalCatVisivel, setModalCatVisivel] = useState(false);
   const [nomeCategoria, setNomeCategoria] = useState("");
@@ -105,7 +133,7 @@ export default function Dashboard() {
   const [modalContaVisivel, setModalContaVisivel] = useState(false);
   const [nomeConta, setNomeConta] = useState("");
   const [saldoInicialConta, setSaldoInicialConta] = useState("");
-  const [contaCompartilhada, setContaCompartilhada] = useState(false); // NOVO: Chavinha
+  const [contaCompartilhada, setContaCompartilhada] = useState(false);
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [descTransacao, setDescTransacao] = useState("");
@@ -127,6 +155,40 @@ export default function Dashboard() {
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
 
+  // --- MATEMÁTICA DO APLICATIVO ---
+  const saldoInicialTotal = contas.reduce(
+    (acc, curr) => acc + curr.saldo_inicial,
+    0,
+  );
+  const receitasRealizadas = transacoes
+    .filter((t) => t.tipo === "receita" && t.status === "paga")
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasRealizadas = transacoes
+    .filter((t) => t.tipo === "despesa" && t.status === "paga")
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const saldoAtualGlobal =
+    saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+
+  const transacoesDoMes = transacoes.filter((t) => {
+    const dataT = new Date(t.data_vencimento);
+    const dataAjustada = new Date(
+      dataT.getTime() + dataT.getTimezoneOffset() * 60000,
+    );
+    return (
+      dataAjustada.getMonth() === mesAtual.getMonth() &&
+      dataAjustada.getFullYear() === mesAtual.getFullYear()
+    );
+  });
+
+  const receitasDoMes = transacoesDoMes
+    .filter((t) => t.tipo === "receita")
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasDoMes = transacoesDoMes
+    .filter((t) => t.tipo === "despesa")
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const balancoMensal = receitasDoMes - despesasDoMes;
+
+  // --- LÓGICA OFFLINE-FIRST ---
   const carregarDados = async () => {
     if (!session?.user?.id) return;
 
@@ -136,7 +198,6 @@ export default function Dashboard() {
           supabase.from("categorias").select("*"),
           supabase.from("contas").select("*"),
           supabase.from("transacoes").select("*"),
-          // Verifica se existe uma parceria aceita
           supabase
             .from("parcerias")
             .select("id")
@@ -146,13 +207,48 @@ export default function Dashboard() {
             ),
         ]);
 
+      if (resCategorias.error || resContas.error || resTransacoes.error) {
+        throw new Error("Sem conexão");
+      }
+
       if (resCategorias.data) setCategorias(resCategorias.data);
       if (resContas.data) setContas(resContas.data);
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
-      if (resParceria.data && resParceria.data.length > 0) setTemParceiro(true);
-      else setTemParceiro(false);
+
+      const temParc = resParceria.data ? resParceria.data.length > 0 : false;
+      setTemParceiro(temParc);
+
+      // SALVA O CACHE LOCAL
+      await AsyncStorage.setItem(
+        "@cache_categorias",
+        JSON.stringify(resCategorias.data ?? []),
+      );
+      await AsyncStorage.setItem(
+        "@cache_contas",
+        JSON.stringify(resContas.data ?? []),
+      );
+      await AsyncStorage.setItem(
+        "@cache_transacoes",
+        JSON.stringify(resTransacoes.data ?? []),
+      );
+      await AsyncStorage.setItem("@cache_parceiro", JSON.stringify(temParc));
     } catch (error) {
-      console.error("Erro ao buscar dados da nuvem:", error);
+      console.log("Internet falhou. Carregando dados locais...");
+
+      const catCache = await AsyncStorage.getItem("@cache_categorias");
+      const conCache = await AsyncStorage.getItem("@cache_contas");
+      const transCache = await AsyncStorage.getItem("@cache_transacoes");
+      const parcCache = await AsyncStorage.getItem("@cache_parceiro");
+
+      if (catCache) setCategorias(JSON.parse(catCache));
+      if (conCache) setContas(JSON.parse(conCache));
+      if (transCache) setTransacoes(JSON.parse(transCache));
+      if (parcCache) setTemParceiro(JSON.parse(parcCache));
+
+      Alert.alert(
+        "Modo Offline",
+        "Você está sem internet. Mostrando seus últimos dados salvos.",
+      );
     }
   };
 
@@ -161,18 +257,6 @@ export default function Dashboard() {
       carregarDados();
     }, [session]),
   );
-
-  const saldoInicialTotal = contas.reduce(
-    (acc, curr) => acc + curr.saldo_inicial,
-    0,
-  );
-  const receitasTotais = transacoes
-    .filter((t) => t.tipo === "receita" && t.status === "paga")
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasTotais = transacoes
-    .filter((t) => t.tipo === "despesa" && t.status === "paga")
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const saldoAtualGlobal = saldoInicialTotal + receitasTotais - despesasTotais;
 
   const calcularSaldoConta = (conta: Conta) => {
     const transDaConta = transacoes.filter(
@@ -190,18 +274,16 @@ export default function Dashboard() {
   const salvarCategoria = async () => {
     if (nomeCategoria.trim() === "")
       return Alert.alert("Aviso", "Escreve um nome.");
-    const { error } = await supabase
-      .from("categorias")
-      .insert([
-        {
-          nome: nomeCategoria,
-          cor: corSelecionada,
-          icone: "label",
-          tipo: tipoNovaCategoria,
-          ativa: 1,
-          user_id: session.user.id,
-        },
-      ]);
+    const { error } = await supabase.from("categorias").insert([
+      {
+        nome: nomeCategoria,
+        cor: corSelecionada,
+        icone: "label",
+        tipo: tipoNovaCategoria,
+        ativa: 1,
+        user_id: session.user.id,
+      },
+    ]);
     if (error) return Alert.alert("Erro", "Falha ao salvar categoria.");
     setNomeCategoria("");
     setTipoNovaCategoria("despesa");
@@ -219,7 +301,7 @@ export default function Dashboard() {
         nome: nomeConta,
         saldo_inicial: saldoNum,
         user_id: session.user.id,
-        compartilhado: contaCompartilhada, // NOVO: Salva se é conjunta ou não!
+        compartilhado: contaCompartilhada,
       },
     ]);
 
@@ -401,13 +483,120 @@ export default function Dashboard() {
           >
             <Text style={styles.actionButtonText}>+ Transação</Text>
           </TouchableOpacity>
+
+          {/* BOTÃO DA IA QUE LEVA PARA A TELA NOVA */}
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: "#1D3557" }]}
+            onPress={() => router.push("/chat-ia")}
+          >
+            <Text style={styles.actionButtonText}>✨ Consultor IA</Text>
+          </TouchableOpacity>
         </ScrollView>
 
+        {/* --- NOVO CARTÃO DE FLUXO DE CAIXA --- */}
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceTitle}>Saldo Global (Real)</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 20,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => alterarMes(-1)}
+              style={{
+                padding: 8,
+                backgroundColor: "rgba(255,255,255,0.1)",
+                borderRadius: 20,
+              }}
+            >
+              <MaterialIcons name="chevron-left" size={24} color="#FFF" />
+            </TouchableOpacity>
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "bold",
+                color: "#FFF",
+                textTransform: "capitalize",
+              }}
+            >
+              {nomeDoMes}
+            </Text>
+            <TouchableOpacity
+              onPress={() => alterarMes(1)}
+              style={{
+                padding: 8,
+                backgroundColor: "rgba(255,255,255,0.1)",
+                borderRadius: 20,
+              }}
+            >
+              <MaterialIcons name="chevron-right" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.balanceTitle}>Saldo Global (Na Conta)</Text>
           <Text style={styles.balanceAmount}>
             R$ {saldoAtualGlobal.toFixed(2)}
           </Text>
+
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              marginTop: 20,
+              paddingTop: 15,
+              borderTopWidth: 1,
+              borderTopColor: "#333",
+            }}
+          >
+            <View>
+              <Text style={{ color: "#999", fontSize: 12 }}>
+                Entradas do Mês
+              </Text>
+              <Text
+                style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 16 }}
+              >
+                + R$ {receitasDoMes.toFixed(2)}
+              </Text>
+            </View>
+            <View>
+              <Text style={{ color: "#999", fontSize: 12, textAlign: "right" }}>
+                Saídas do Mês
+              </Text>
+              <Text
+                style={{
+                  color: "#E76F51",
+                  fontWeight: "bold",
+                  fontSize: 16,
+                  textAlign: "right",
+                }}
+              >
+                - R$ {despesasDoMes.toFixed(2)}
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={{
+              marginTop: 15,
+              alignItems: "center",
+              backgroundColor: "rgba(255,255,255,0.05)",
+              padding: 10,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: "#999", fontSize: 12 }}>Balanço do Mês</Text>
+            <Text
+              style={{
+                color: balancoMensal >= 0 ? "#8AB17D" : "#E76F51",
+                fontWeight: "bold",
+                fontSize: 20,
+              }}
+            >
+              R$ {balancoMensal.toFixed(2)}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -452,7 +641,6 @@ export default function Dashboard() {
                       >
                         {conta.nome}
                       </Text>
-                      {/* ÍCONE DE CONTA COMPARTILHADA */}
                       {conta.compartilhado && (
                         <View
                           style={{
@@ -501,7 +689,6 @@ export default function Dashboard() {
               Nova Conta
             </Text>
 
-            {/* NOVO: OPÇÃO DE COMPARTILHAR (SÓ APARECE SE TIVER PARCEIRO) */}
             {temParceiro && (
               <View
                 style={{

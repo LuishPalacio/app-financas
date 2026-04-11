@@ -6,13 +6,14 @@ import {
 import { Stack, useRouter, useSegments } from "expo-router";
 import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
-import { useColorScheme } from "react-native";
+import { Alert, useColorScheme } from "react-native";
 import "react-native-reanimated";
 import { initializeDatabase } from "../database/initDB";
 
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as Updates from "expo-updates"; // <-- MOTOR DE ATUALIZAÇÕES ADICIONADO
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,7 +30,7 @@ export const ThemeContext = createContext({
   toggleTheme: async () => {},
   isBiometricEnabled: false,
   toggleBiometric: async (value: boolean) => {},
-  session: null as any, // Adicionamos a sessão aqui para as abas saberem quem está logado
+  session: null as any,
 });
 
 export const useAppTheme = () => useContext(ThemeContext);
@@ -37,7 +38,7 @@ export const useAppTheme = () => useContext(ThemeContext);
 export default function RootLayout() {
   const systemTheme = useColorScheme();
   const router = useRouter();
-  const segments = useSegments(); // Lê a página em que estamos agora
+  const segments = useSegments();
 
   const [isDark, setIsDark] = useState(systemTheme === "dark");
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
@@ -49,33 +50,67 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
+  // 1. OLHEIRO DE ATUALIZAÇÕES (OTA Updates)
+  useEffect(() => {
+    async function verificarAtualizacao() {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+
+        if (update.isAvailable) {
+          Alert.alert(
+            "Nova Atualização!",
+            "Baixando as novidades do LHS Finanças...",
+            [{ text: "Aguarde..." }],
+          );
+
+          await Updates.fetchUpdateAsync();
+
+          Alert.alert(
+            "Sucesso!",
+            "O aplicativo será reiniciado para aplicar as melhorias.",
+            [{ text: "OK", onPress: () => Updates.reloadAsync() }],
+          );
+        }
+      } catch (error) {
+        console.log("Erro ao buscar atualizações: ", error);
+      }
+    }
+
+    if (!__DEV__) {
+      verificarAtualizacao();
+    }
+  }, []);
+
+  // 2. CONFIGURAÇÕES INICIAIS E SUPABASE
   useEffect(() => {
     carregarConfiguracoes();
 
-    // 1. O RADAR DO SUPABASE (Verifica se já tem alguém salvo na memória ao abrir)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setIsAuthReady(true);
     });
 
-    // 2. Fica escutando se alguém fez login ou clicou em "Sair"
-    supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
+
+    // Boa prática: limpa o escutador quando o componente for desmontado
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // O SEGURANÇA EM AÇÃO: Fica de olho nas mudanças de tela e de sessão
   useEffect(() => {
     if (!isReady || !isAuthReady) return;
 
-    // Descobre se estamos na página de login
     const inAuthGroup = segments[0] === "login";
 
     if (!session && !inAuthGroup) {
-      // Se NÃO tem login e tentou entrar no app, expulsa para o Login!
       router.replace("/login");
     } else if (session && inAuthGroup) {
-      // Se JÁ TEM login e tentou voltar pro Login, manda pra dentro do app!
       router.replace("/(tabs)");
     }
   }, [session, isReady, isAuthReady, segments]);
