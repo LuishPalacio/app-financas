@@ -3,25 +3,21 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
 
-// ✅ FIX 1: Chave de API movida para variável de ambiente.
-// No arquivo .env na raiz do projeto, adicione:
-//   EXPO_PUBLIC_OPENAI_API_KEY=sk-...
-// Nunca coloque a chave diretamente no código.
-const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? "";
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? "";
 
 interface Mensagem {
   id: string;
@@ -35,7 +31,6 @@ export default function ChatIA() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const [saldoReal, setSaldoReal] = useState(0);
-  // ✅ FIX 6: Removido o fallback fixo "Luis". Usa string vazia como padrão genérico.
   const [nomeUsuario, setNomeUsuario] = useState("");
   const [input, setInput] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -53,16 +48,12 @@ export default function ChatIA() {
     bolhaSistema: "#E9C46A",
   };
 
-  // ✅ FIX 2: Função separada apenas para atualizar o saldo.
-  // Não toca nas mensagens, eliminando a race condition.
   const atualizarSaldo = async () => {
     if (!session?.user?.id) return;
-
     const { data: trans } = await supabase
       .from("transacoes")
       .select("valor, tipo, status")
       .eq("user_id", session.user.id);
-
     const { data: contas } = await supabase
       .from("contas")
       .select("saldo_inicial")
@@ -82,10 +73,8 @@ export default function ChatIA() {
     setSaldoReal(inicial + receitas - despesas);
   };
 
-  // Inicializa o chat: carrega histórico + saldo + nome do usuário.
   const inicializarChat = async () => {
     if (!session?.user?.id) return;
-
     const historicoSalvo = await AsyncStorage.getItem("@historico_chat");
     if (historicoSalvo) {
       setMensagens(JSON.parse(historicoSalvo));
@@ -94,11 +83,11 @@ export default function ChatIA() {
         {
           id: "1",
           role: "ia",
-          texto: "Olá! Sou seu Agente IA. Vamos organizar suas finanças?",
+          texto:
+            "Olá! Sou sua consultora financeira do LHS Finanças. Posso registrar transações, pesquisar seus gastos ou te dar dicas para economizar. Como posso te ajudar hoje?",
         },
       ]);
     }
-
     await atualizarSaldo();
     setNomeUsuario(session.user.user_metadata?.nome_usuario ?? "");
   };
@@ -108,17 +97,15 @@ export default function ChatIA() {
   }, []);
 
   useEffect(() => {
-    if (mensagens.length > 0) {
+    if (mensagens.length > 0)
       AsyncStorage.setItem("@historico_chat", JSON.stringify(mensagens));
-    }
   }, [mensagens]);
 
   const enviarMensagem = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || carregando) return;
 
     const msgUsuario = input;
     setInput("");
-
     const novasMensagens: Mensagem[] = [
       ...mensagens,
       { id: Date.now().toString(), role: "user", texto: msgUsuario },
@@ -127,104 +114,257 @@ export default function ChatIA() {
     setCarregando(true);
 
     try {
-      const promptSistema = `Você é o Administrador do app LHS Finanças.
-Saldo Real: R$ ${saldoReal.toFixed(2)}.
-REGRAS DE NÚMEROS: O usuário usa "," para decimais (ex: 10,50).
-Se for registrar algo, use SEMPRE: [CRIAR_TRANSACAO] | tipo | valor | desc.
-No campo valor, use SEMPRE PONTO (.) para o sistema entender, nunca vírgula.`;
+      // 🎭 ENGENHARIA DE PERSONA: Dando vida e educação à IA
+      const promptSistema = `Você é a assistente financeira premium do app LHS Finanças. Seu objetivo é cuidar da vida financeira do usuário de forma extremamente educada, empática e humana, agindo como uma consultora pessoal e amiga.
+      
+      DADOS DO USUÁRIO:
+      - Nome: ${nomeUsuario || "Luis"}
+      - Saldo atual: R$ ${saldoReal.toFixed(2)}
+      
+      REGRAS DE PERSONALIDADE (MUITO IMPORTANTE):
+      1. Seja muito gentil, calorosa e use um tom de voz acolhedor. Sempre chame o usuário pelo nome.
+      2. Use emojis com naturalidade para expressar emoções (ex: 🎉 para receitas, 💸 ou 🤔 para despesas).
+      3. Comemore quando o usuário registrar ganhos (salário, freelas) e seja compreensiva e dê apoio se ele relatar um gasto alto ou não planejado.
+      4. Quando o usuário pedir dicas de economia ou apenas conversar, dê respostas ricas, organizadas e encorajadoras.
+      
+      FERRAMENTAS: Você tem acesso a 'criar_transacao', 'pesquisar_gastos' e 'desfazer_ultima'. Use-as silenciosamente quando precisar agir nos dados.`;
 
-      // ✅ FIX 3: Histórico completo enviado ao GPT.
-      // O modelo agora recebe todas as mensagens anteriores, mantendo o contexto da conversa.
-      const historicoParaAPI = novasMensagens
-        .filter((m) => m.role === "user" || m.role === "ia")
-        .map((m) => ({
-          role: m.role === "user" ? "user" : "assistant",
-          content: m.texto,
-        }));
+      const historicoParaAPI = novasMensagens.map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content:
+          m.role === "sistema"
+            ? `[AÇÃO JÁ EXECUTADA NO BANCO DE DADOS: ${m.texto}]`
+            : m.texto,
+      }));
+
+      // 🛠️ O CINTO DE FERRAMENTAS COMPLETO
+      const ferramentas = [
+        {
+          type: "function",
+          function: {
+            name: "criar_transacao",
+            description: "Registra dinheiro entrando ou saindo.",
+            parameters: {
+              type: "object",
+              properties: {
+                tipo: { type: "string", enum: ["receita", "despesa"] },
+                valor: { type: "number" },
+                descricao: { type: "string" },
+                categoria: {
+                  type: "string",
+                  enum: [
+                    "Alimentação",
+                    "Moradia",
+                    "Transporte",
+                    "Lazer",
+                    "Saúde",
+                    "Salário",
+                    "Outros",
+                  ],
+                  description: "Adivinhe a categoria baseada na descrição.",
+                },
+              },
+              required: ["tipo", "valor", "descricao", "categoria"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "pesquisar_gastos",
+            description:
+              "Pesquisa o histórico de transações por uma palavra-chave para saber quanto foi gasto.",
+            parameters: {
+              type: "object",
+              properties: {
+                termo: {
+                  type: "string",
+                  description:
+                    "O nome do lugar, marca ou conta para pesquisar (ex: 'Ifood', 'Luz', 'Uber').",
+                },
+              },
+              required: ["termo"],
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "desfazer_ultima",
+            description:
+              "Apaga a última transação cadastrada no banco de dados se o usuário disser que errou ou pedir para cancelar a última.",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ];
 
       const response = await fetch(
-        "https://api.openai.com/v1/chat/completions",
+        "https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            Authorization: `Bearer ${GROQ_API_KEY}`,
           },
           body: JSON.stringify({
-            model: "gpt-4o",
+            model: "llama-3.1-8b-instant",
             messages: [
               { role: "system", content: promptSistema },
               ...historicoParaAPI,
             ],
-            temperature: 0.3,
+            tools: ferramentas,
+            tool_choice: "auto",
+            temperature: 0.3, // Aumentei levemente para ela ser mais criativa nas respostas
           }),
         },
       );
 
       const data = await response.json();
-      const respostaIA = data.choices[0].message.content.trim();
+      if (!response.ok) throw new Error(data.error?.message || "Erro na API");
 
-      if (respostaIA.includes("[CRIAR_TRANSACAO]")) {
-        const partes = respostaIA.split("|").map((p: string) => p.trim());
-        const tipo = partes[1].toLowerCase().includes("receita")
-          ? "receita"
-          : "despesa";
+      const mensagemRetorno = data.choices[0].message;
 
-        // ✅ FIX 4: Regex /,/g substitui TODAS as vírgulas, não só a primeira.
-        const valorTratado = partes[2].replace(/,/g, ".");
-        const valor = parseFloat(valorTratado);
-        const descricao = partes[3] || "Registro via IA";
+      if (mensagemRetorno.tool_calls) {
+        for (const toolCall of mensagemRetorno.tool_calls) {
+          const args = toolCall.function.arguments
+            ? JSON.parse(toolCall.function.arguments)
+            : {};
 
-        const { data: listContas } = await supabase
-          .from("contas")
-          .select("id")
-          .eq("user_id", session?.user?.id)
-          .limit(1);
+          // PODER 1: CRIAR COM CATEGORIA
+          if (toolCall.function.name === "criar_transacao") {
+            const { data: listContas } = await supabase
+              .from("contas")
+              .select("id")
+              .eq("user_id", session?.user?.id)
+              .limit(1);
+            if (listContas && listContas.length > 0) {
+              await supabase.from("transacoes").insert([
+                {
+                  tipo: args.tipo,
+                  valor: args.valor,
+                  descricao: `[${args.categoria}] ${args.descricao}`,
+                  status: "paga",
+                  data_vencimento: new Date().toISOString().split("T")[0],
+                  conta_id: listContas[0].id,
+                  user_id: session?.user?.id,
+                },
+              ]);
+              setMensagens((prev) => [
+                ...prev,
+                {
+                  id: Date.now().toString(),
+                  role: "sistema",
+                  texto: `✅ Prontinho! Anotei R$ ${args.valor.toFixed(2)} em ${args.categoria}. Seu saldo já está atualizado!`,
+                },
+              ]);
+            }
+          }
 
-        if (listContas && listContas.length > 0) {
-          await supabase.from("transacoes").insert([
-            {
-              tipo,
-              valor,
-              descricao: `IA: ${descricao}`,
-              status: "paga",
-              data_vencimento: new Date().toISOString().split("T")[0],
-              conta_id: listContas[0].id,
-              user_id: session?.user?.id,
-            },
-          ]);
+          // PODER 2: PESQUISAR E SOMAR
+          else if (toolCall.function.name === "pesquisar_gastos") {
+            let query = supabase
+              .from("transacoes")
+              .select("valor, tipo, descricao")
+              .eq("user_id", session?.user?.id);
 
-          setMensagens((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "sistema",
-              texto: `✅ Salvo! R$ ${valor.toFixed(2).replace(".", ",")} registrado.`,
-            },
-          ]);
+            if (args.termo) {
+              query = query.ilike("descricao", `%${args.termo}%`);
+            }
 
-          // ✅ FIX 2 (continuação): Chama só atualizarSaldo(), sem mexer nas mensagens.
-          await atualizarSaldo();
+            const { data: resultados } = await query;
+
+            const totalGastos =
+              resultados
+                ?.filter((r) => r.tipo === "despesa")
+                .reduce((acc, curr) => acc + curr.valor, 0) ?? 0;
+            const totalReceitas =
+              resultados
+                ?.filter((r) => r.tipo === "receita")
+                .reduce((acc, curr) => acc + curr.valor, 0) ?? 0;
+            const qtd = resultados?.length ?? 0;
+
+            let textoResposta = "";
+            if (args.termo) {
+              textoResposta = `🔍 Dei uma olhada aqui e encontrei ${qtd} registro(s) de "${args.termo}". O total gasto foi de R$ ${totalGastos.toFixed(2)}.`;
+            } else {
+              textoResposta = `📊 Aqui está o seu resumo: Você recebeu R$ ${totalReceitas.toFixed(2)} e gastou R$ ${totalGastos.toFixed(2)}.`;
+            }
+
+            setMensagens((prev) => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "sistema",
+                texto: textoResposta,
+              },
+            ]);
+          }
+
+          // PODER 3: BOTÃO DE PÂNICO
+          else if (toolCall.function.name === "desfazer_ultima") {
+            const { data: ultimas } = await supabase
+              .from("transacoes")
+              .select("id, descricao, valor")
+              .eq("user_id", session?.user?.id)
+              .order("id", { ascending: false })
+              .limit(1);
+
+            if (ultimas && ultimas.length > 0) {
+              await supabase
+                .from("transacoes")
+                .delete()
+                .eq("id", ultimas[0].id);
+              setMensagens((prev) => [
+                ...prev,
+                {
+                  id: Date.now().toString(),
+                  role: "sistema",
+                  texto: `🗑️ Sem problemas! Acabei de apagar a transação "${ultimas[0].descricao}" de R$ ${ultimas[0].valor}.`,
+                },
+              ]);
+            } else {
+              setMensagens((prev) => [
+                ...prev,
+                {
+                  id: Date.now().toString(),
+                  role: "sistema",
+                  texto: `⚠️ Dei uma olhada, mas não encontrei nenhuma transação para apagar, viu?`,
+                },
+              ]);
+            }
+          }
         }
-      } else {
+        await atualizarSaldo();
+      } else if (mensagemRetorno.content) {
         setMensagens((prev) => [
           ...prev,
-          { id: Date.now().toString(), role: "ia", texto: respostaIA },
+          {
+            id: Date.now().toString(),
+            role: "ia",
+            texto: mensagemRetorno.content,
+          },
         ]);
       }
-    } catch (error) {
-      // ✅ FIX 5: id único no erro para evitar chaves React duplicadas.
+    } catch (error: any) {
+      console.log("Erro completo:", error);
       setMensagens((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: "ia",
-          texto: "Erro na conexão GPT-4o!",
+          texto: `Erro no Agente: ${error.message}`,
         },
       ]);
     } finally {
       setCarregando(false);
     }
+  };
+
+  const limparChat = async () => {
+    await AsyncStorage.removeItem("@historico_chat");
+    setMensagens([
+      { id: "1", role: "ia", texto: "Memória limpa! Como posso ajudar agora?" },
+    ]);
   };
 
   return (
@@ -251,9 +391,15 @@ No campo valor, use SEMPRE PONTO (.) para o sistema entender, nunca vírgula.`;
             />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: Cores.textoPrincipal }]}>
-            ✨ Administrador IA
+            ✨ Consultora IA
           </Text>
-          <View style={{ width: 44 }} />
+          <TouchableOpacity onPress={limparChat} style={{ padding: 10 }}>
+            <MaterialIcons
+              name="delete-outline"
+              size={24}
+              color={Cores.textoSecundario}
+            />
+          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -285,11 +431,11 @@ No campo valor, use SEMPRE PONTO (.) para o sistema entender, nunca vírgula.`;
               <Text
                 style={{
                   color:
-                    msg.role === "user"
-                      ? "#FFF"
-                      : msg.role === "sistema"
+                    msg.role === "user" || msg.role === "sistema"
+                      ? msg.role === "sistema"
                         ? "#1A1A1A"
-                        : Cores.textoBolhaIA,
+                        : "#FFF"
+                      : Cores.textoBolhaIA,
                   fontSize: 16,
                 }}
               >
@@ -325,7 +471,7 @@ No campo valor, use SEMPRE PONTO (.) para o sistema entender, nunca vírgula.`;
                 borderColor: Cores.borda,
               },
             ]}
-            placeholder="Ex: Recebi 50,25 hoje"
+            placeholder="Ex: Gastei 300 reais, tô me sentindo culpado..."
             placeholderTextColor={Cores.textoSecundario}
             value={input}
             onChangeText={setInput}
@@ -360,7 +506,6 @@ const styles = StyleSheet.create({
   chatArea: { flex: 1 },
   bolha: { maxWidth: "85%", padding: 12, borderRadius: 16, marginBottom: 15 },
   bolhaEsquerda: { alignSelf: "flex-start", borderBottomLeftRadius: 4 },
-  // ✅ FIX 6: Removido "bolhaRight" duplicado. Apenas "bolhaDireita" é necessário.
   bolhaDireita: { alignSelf: "flex-end", borderBottomRightRadius: 4 },
   inputArea: {
     flexDirection: "row",
