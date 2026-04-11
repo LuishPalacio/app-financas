@@ -18,6 +18,7 @@ import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? "";
+const MODELO = "llama-3.3-70b-versatile";
 
 interface Mensagem {
   id: string;
@@ -25,16 +26,29 @@ interface Mensagem {
   texto: string;
 }
 
+interface RespostaIA {
+  intent: "create_transaction" | "create_account" | "query";
+  status: "collecting_data" | "ready_for_confirmation" | "confirmed";
+  data: Record<string, any>;
+  missing_fields: string[];
+  message: string;
+}
+
 export default function ChatIA() {
   const { isDark, session } = useAppTheme();
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const [saldoReal, setSaldoReal] = useState(0);
-  const [nomeUsuario, setNomeUsuario] = useState("");
   const [input, setInput] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
+
+  const [currentData, setCurrentData] = useState<Record<string, any>>({});
+  const [currentIntent, setCurrentIntent] = useState<
+    RespostaIA["intent"] | null
+  >(null);
+  const [currentStatus, setCurrentStatus] =
+    useState<RespostaIA["status"]>("collecting_data");
 
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
@@ -54,42 +68,45 @@ export default function ChatIA() {
       .from("transacoes")
       .select("valor, tipo, status")
       .eq("user_id", session.user.id);
+
     const { data: contas } = await supabase
       .from("contas")
       .select("saldo_inicial")
       .eq("user_id", session.user.id);
 
     const inicial =
-      contas?.reduce((acc, curr) => acc + (curr.saldo_inicial || 0), 0) ?? 0;
+      contas?.reduce((acc, c) => acc + (c.saldo_inicial || 0), 0) ?? 0;
     const receitas =
       trans
         ?.filter((t) => t.tipo === "receita" && t.status === "paga")
-        .reduce((acc, curr) => acc + curr.valor, 0) ?? 0;
+        .reduce((acc, t) => acc + t.valor, 0) ?? 0;
     const despesas =
       trans
         ?.filter((t) => t.tipo === "despesa" && t.status === "paga")
-        .reduce((acc, curr) => acc + curr.valor, 0) ?? 0;
+        .reduce((acc, t) => acc + t.valor, 0) ?? 0;
 
-    setSaldoReal(inicial + receitas - despesas);
+    console.log("Saldo atualizado:", inicial + receitas - despesas);
+  };
+
+  const salvarMensagem = async (role: string, texto: string) => {
+    try {
+      await supabase.from("chat_historico").insert({
+        user_id: session?.user?.id,
+        role,
+        texto,
+        created_at: new Date().toISOString(),
+      });
+    } catch {}
   };
 
   const inicializarChat = async () => {
-    if (!session?.user?.id) return;
-    const historicoSalvo = await AsyncStorage.getItem("@historico_chat");
-    if (historicoSalvo) {
-      setMensagens(JSON.parse(historicoSalvo));
-    } else {
-      setMensagens([
-        {
-          id: "1",
-          role: "ia",
-          texto:
-            "Olá! Sou sua consultora financeira do LHS Finanças. Posso registrar transações, pesquisar seus gastos ou te dar dicas para economizar. Como posso te ajudar hoje?",
-        },
-      ]);
-    }
-    await atualizarSaldo();
-    setNomeUsuario(session.user.user_metadata?.nome_usuario ?? "");
+    const boasVindas: Mensagem = {
+      id: "1",
+      role: "ia",
+      texto: "Olá! Sou sua consultora financeira. Como posso ajudar?",
+    };
+    setMensagens([boasVindas]);
+    await salvarMensagem("ia", boasVindas.texto);
   };
 
   useEffect(() => {
@@ -97,108 +114,105 @@ export default function ChatIA() {
   }, []);
 
   useEffect(() => {
-    if (mensagens.length > 0)
+    if (mensagens.length > 0) {
       AsyncStorage.setItem("@historico_chat", JSON.stringify(mensagens));
+    }
   }, [mensagens]);
+
+  const promptSistema = `Você é uma consultora financeira simples e direta.
+
+REGRAS IMPORTANTES:
+- Se o usuário disser "criar conta", "nova conta", "crie uma conta" → intent: "create_account"
+- Caso contrário → intent: "create_transaction"
+- Pergunte APENAS UM campo por vez (nunca liste vários).
+- Quando todos os campos estiverem coletados, mostre resumo + "Posso criar?"
+- Responda SEMPRE apenas com JSON válido.
+
+Exemplo para transação:
+{
+  "intent": "create_transaction",
+  "status": "collecting_data",
+  "data": {"tipo": "receita", "value": 1000},
+  "missing_fields": ["description"],
+  "message": "Qual a descrição?"
+}
+
+Quando pronto:
+{
+  "intent": "create_transaction",
+  "status": "ready_for_confirmation",
+  "data": {...},
+  "missing_fields": [],
+  "message": "Tipo: receita\\nValor: 1000\\nDescrição: ...\\nCategoria: ...\\nConta: ...\\nData: ...\\n\\nPosso criar?"
+}
+
+Responda apenas com o JSON.`;
+
+  const criarTransacao = async (data: Record<string, any>) => {
+    const { data: contas } = await supabase
+      .from("contas")
+      .select("id")
+      .eq("user_id", session?.user?.id)
+      .limit(1);
+
+    if (!contas?.length) return "Nenhuma conta encontrada.";
+
+    const { error } = await supabase.from("transacoes").insert({
+      tipo: data.tipo,
+      valor: Number(data.value),
+      descricao: `[${data.category || "Outros"}] ${data.description}`,
+      status: "paga",
+      data_vencimento: data.date || new Date().toISOString().split("T")[0],
+      conta_id: contas[0].id,
+      user_id: session?.user?.id,
+    });
+
+    if (error) return `Erro ao criar: ${error.message}`;
+
+    await atualizarSaldo();
+    return `✅ ${data.tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada com sucesso.`;
+  };
+
+  const criarConta = async (data: Record<string, any>) => {
+    const { error } = await supabase.from("contas").insert({
+      user_id: session?.user?.id,
+      nome: data.nome || data.description,
+      saldo_inicial: Number(data.saldo_inicial || 0),
+    });
+
+    if (error) return `Erro ao criar conta: ${error.message}`;
+
+    await atualizarSaldo();
+    return `✅ Conta "${data.nome || data.description}" criada com sucesso!`;
+  };
 
   const enviarMensagem = async () => {
     if (!input.trim() || carregando) return;
 
-    const msgUsuario = input;
+    const textoUsuario = input.trim();
     setInput("");
-    const novasMensagens: Mensagem[] = [
-      ...mensagens,
-      { id: Date.now().toString(), role: "user", texto: msgUsuario },
-    ];
+
+    // Adiciona mensagem do usuário imediatamente
+    const novaMsg: Mensagem = {
+      id: Date.now().toString(),
+      role: "user",
+      texto: textoUsuario,
+    };
+    const novasMensagens = [...mensagens, novaMsg];
     setMensagens(novasMensagens);
+    await salvarMensagem("user", textoUsuario);
+
     setCarregando(true);
 
     try {
-      // 🎭 ENGENHARIA DE PERSONA: Dando vida e educação à IA
-      const promptSistema = `Você é a assistente financeira premium do app LHS Finanças. Seu objetivo é cuidar da vida financeira do usuário de forma extremamente educada, empática e humana, agindo como uma consultora pessoal e amiga.
-      
-      DADOS DO USUÁRIO:
-      - Nome: ${nomeUsuario || "Luis"}
-      - Saldo atual: R$ ${saldoReal.toFixed(2)}
-      
-      REGRAS DE PERSONALIDADE (MUITO IMPORTANTE):
-      1. Seja muito gentil, calorosa e use um tom de voz acolhedor. Sempre chame o usuário pelo nome.
-      2. Use emojis com naturalidade para expressar emoções (ex: 🎉 para receitas, 💸 ou 🤔 para despesas).
-      3. Comemore quando o usuário registrar ganhos (salário, freelas) e seja compreensiva e dê apoio se ele relatar um gasto alto ou não planejado.
-      4. Quando o usuário pedir dicas de economia ou apenas conversar, dê respostas ricas, organizadas e encorajadoras.
-      
-      FERRAMENTAS: Você tem acesso a 'criar_transacao', 'pesquisar_gastos' e 'desfazer_ultima'. Use-as silenciosamente quando precisar agir nos dados.`;
+      const historicoParaAPI = novasMensagens
+        .filter((m) => m.role !== "sistema")
+        .map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.texto,
+        }));
 
-      const historicoParaAPI = novasMensagens.map((m) => ({
-        role: m.role === "user" ? "user" : "assistant",
-        content:
-          m.role === "sistema"
-            ? `[AÇÃO JÁ EXECUTADA NO BANCO DE DADOS: ${m.texto}]`
-            : m.texto,
-      }));
-
-      // 🛠️ O CINTO DE FERRAMENTAS COMPLETO
-      const ferramentas = [
-        {
-          type: "function",
-          function: {
-            name: "criar_transacao",
-            description: "Registra dinheiro entrando ou saindo.",
-            parameters: {
-              type: "object",
-              properties: {
-                tipo: { type: "string", enum: ["receita", "despesa"] },
-                valor: { type: "number" },
-                descricao: { type: "string" },
-                categoria: {
-                  type: "string",
-                  enum: [
-                    "Alimentação",
-                    "Moradia",
-                    "Transporte",
-                    "Lazer",
-                    "Saúde",
-                    "Salário",
-                    "Outros",
-                  ],
-                  description: "Adivinhe a categoria baseada na descrição.",
-                },
-              },
-              required: ["tipo", "valor", "descricao", "categoria"],
-            },
-          },
-        },
-        {
-          type: "function",
-          function: {
-            name: "pesquisar_gastos",
-            description:
-              "Pesquisa o histórico de transações por uma palavra-chave para saber quanto foi gasto.",
-            parameters: {
-              type: "object",
-              properties: {
-                termo: {
-                  type: "string",
-                  description:
-                    "O nome do lugar, marca ou conta para pesquisar (ex: 'Ifood', 'Luz', 'Uber').",
-                },
-              },
-              required: ["termo"],
-            },
-          },
-        },
-        {
-          type: "function",
-          function: {
-            name: "desfazer_ultima",
-            description:
-              "Apaga a última transação cadastrada no banco de dados se o usuário disser que errou ou pedir para cancelar a última.",
-            parameters: { type: "object", properties: {} },
-          },
-        },
-      ];
-
-      const response = await fetch(
+      const resAPI = await fetch(
         "https://api.groq.com/openai/v1/chat/completions",
         {
           method: "POST",
@@ -207,152 +221,109 @@ export default function ChatIA() {
             Authorization: `Bearer ${GROQ_API_KEY}`,
           },
           body: JSON.stringify({
-            model: "llama-3.1-8b-instant",
+            model: MODELO,
             messages: [
               { role: "system", content: promptSistema },
               ...historicoParaAPI,
             ],
-            tools: ferramentas,
-            tool_choice: "auto",
-            temperature: 0.3, // Aumentei levemente para ela ser mais criativa nas respostas
+            temperature: 0.1,
+            max_tokens: 700,
+            response_format: { type: "json_object" },
           }),
         },
       );
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || "Erro na API");
+      const dados = await resAPI.json();
+      if (!resAPI.ok) throw new Error(dados.error?.message || "Erro na API");
 
-      const mensagemRetorno = data.choices[0].message;
+      let conteudo = dados.choices[0]?.message?.content || "";
+      conteudo = conteudo.replace(/```json|```/g, "").trim();
 
-      if (mensagemRetorno.tool_calls) {
-        for (const toolCall of mensagemRetorno.tool_calls) {
-          const args = toolCall.function.arguments
-            ? JSON.parse(toolCall.function.arguments)
-            : {};
+      const jsonMatch = conteudo.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : conteudo;
 
-          // PODER 1: CRIAR COM CATEGORIA
-          if (toolCall.function.name === "criar_transacao") {
-            const { data: listContas } = await supabase
-              .from("contas")
-              .select("id")
-              .eq("user_id", session?.user?.id)
-              .limit(1);
-            if (listContas && listContas.length > 0) {
-              await supabase.from("transacoes").insert([
-                {
-                  tipo: args.tipo,
-                  valor: args.valor,
-                  descricao: `[${args.categoria}] ${args.descricao}`,
-                  status: "paga",
-                  data_vencimento: new Date().toISOString().split("T")[0],
-                  conta_id: listContas[0].id,
-                  user_id: session?.user?.id,
-                },
-              ]);
-              setMensagens((prev) => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: "sistema",
-                  texto: `✅ Prontinho! Anotei R$ ${args.valor.toFixed(2)} em ${args.categoria}. Seu saldo já está atualizado!`,
-                },
-              ]);
-            }
-          }
+      let respostaIA: RespostaIA;
+      try {
+        respostaIA = JSON.parse(jsonStr);
+      } catch (e) {
+        console.error("JSON parse falhou:", conteudo);
+        respostaIA = {
+          intent: "query",
+          status: "collecting_data",
+          data: {},
+          missing_fields: [],
+          message: "Não entendi. Pode repetir?",
+        };
+      }
 
-          // PODER 2: PESQUISAR E SOMAR
-          else if (toolCall.function.name === "pesquisar_gastos") {
-            let query = supabase
-              .from("transacoes")
-              .select("valor, tipo, descricao")
-              .eq("user_id", session?.user?.id);
+      setCurrentIntent(respostaIA.intent);
+      setCurrentData((prev) => ({ ...prev, ...respostaIA.data }));
+      setCurrentStatus(respostaIA.status);
 
-            if (args.termo) {
-              query = query.ilike("descricao", `%${args.termo}%`);
-            }
+      if (respostaIA.message) {
+        const textoLimpo = respostaIA.message.replace(/\\n/g, "\n");
+        const msgIA: Mensagem = {
+          id: `${Date.now()}-ia`,
+          role: "ia",
+          texto: textoLimpo,
+        };
+        setMensagens((prev) => [...prev, msgIA]);
+        await salvarMensagem("ia", textoLimpo);
+      }
 
-            const { data: resultados } = await query;
+      // Confirmação
+      const confirmacoes = [
+        "sim",
+        "pode",
+        "confirma",
+        "confirmar",
+        "ok",
+        "yes",
+        "pronto",
+      ];
+      const usuarioConfirmou = confirmacoes.some((p) =>
+        textoUsuario.toLowerCase().includes(p),
+      );
 
-            const totalGastos =
-              resultados
-                ?.filter((r) => r.tipo === "despesa")
-                .reduce((acc, curr) => acc + curr.valor, 0) ?? 0;
-            const totalReceitas =
-              resultados
-                ?.filter((r) => r.tipo === "receita")
-                .reduce((acc, curr) => acc + curr.valor, 0) ?? 0;
-            const qtd = resultados?.length ?? 0;
+      if (
+        respostaIA.status === "confirmed" ||
+        (respostaIA.status === "ready_for_confirmation" && usuarioConfirmou)
+      ) {
+        let resultado = "Ação realizada.";
 
-            let textoResposta = "";
-            if (args.termo) {
-              textoResposta = `🔍 Dei uma olhada aqui e encontrei ${qtd} registro(s) de "${args.termo}". O total gasto foi de R$ ${totalGastos.toFixed(2)}.`;
-            } else {
-              textoResposta = `📊 Aqui está o seu resumo: Você recebeu R$ ${totalReceitas.toFixed(2)} e gastou R$ ${totalGastos.toFixed(2)}.`;
-            }
-
-            setMensagens((prev) => [
-              ...prev,
-              {
-                id: Date.now().toString(),
-                role: "sistema",
-                texto: textoResposta,
-              },
-            ]);
-          }
-
-          // PODER 3: BOTÃO DE PÂNICO
-          else if (toolCall.function.name === "desfazer_ultima") {
-            const { data: ultimas } = await supabase
-              .from("transacoes")
-              .select("id, descricao, valor")
-              .eq("user_id", session?.user?.id)
-              .order("id", { ascending: false })
-              .limit(1);
-
-            if (ultimas && ultimas.length > 0) {
-              await supabase
-                .from("transacoes")
-                .delete()
-                .eq("id", ultimas[0].id);
-              setMensagens((prev) => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: "sistema",
-                  texto: `🗑️ Sem problemas! Acabei de apagar a transação "${ultimas[0].descricao}" de R$ ${ultimas[0].valor}.`,
-                },
-              ]);
-            } else {
-              setMensagens((prev) => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: "sistema",
-                  texto: `⚠️ Dei uma olhada, mas não encontrei nenhuma transação para apagar, viu?`,
-                },
-              ]);
-            }
-          }
+        if (
+          respostaIA.intent === "create_transaction" ||
+          currentIntent === "create_transaction"
+        ) {
+          resultado = await criarTransacao(respostaIA.data || currentData);
+        } else if (
+          respostaIA.intent === "create_account" ||
+          currentIntent === "create_account"
+        ) {
+          resultado = await criarConta(respostaIA.data || currentData);
         }
-        await atualizarSaldo();
-      } else if (mensagemRetorno.content) {
-        setMensagens((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "ia",
-            texto: mensagemRetorno.content,
-          },
-        ]);
+
+        const msgSucesso: Mensagem = {
+          id: `${Date.now()}-sys`,
+          role: "sistema",
+          texto: resultado,
+        };
+        setMensagens((prev) => [...prev, msgSucesso]);
+        await salvarMensagem("sistema", resultado);
+
+        // Reset
+        setCurrentData({});
+        setCurrentIntent(null);
+        setCurrentStatus("collecting_data");
       }
     } catch (error: any) {
-      console.log("Erro completo:", error);
+      console.error("Erro:", error);
       setMensagens((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: "ia",
-          texto: `Erro no Agente: ${error.message}`,
+          texto: "Ocorreu um erro. Tente novamente.",
         },
       ]);
     } finally {
@@ -362,9 +333,15 @@ export default function ChatIA() {
 
   const limparChat = async () => {
     await AsyncStorage.removeItem("@historico_chat");
+    await supabase
+      .from("chat_historico")
+      .delete()
+      .eq("user_id", session?.user?.id);
     setMensagens([
-      { id: "1", role: "ia", texto: "Memória limpa! Como posso ajudar agora?" },
+      { id: "1", role: "ia", texto: "Memória limpa. Como posso ajudar?" },
     ]);
+    setCurrentData({});
+    setCurrentIntent(null);
   };
 
   return (
@@ -372,7 +349,6 @@ export default function ChatIA() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 35}
       >
         <View
           style={[
@@ -430,12 +406,7 @@ export default function ChatIA() {
             >
               <Text
                 style={{
-                  color:
-                    msg.role === "user" || msg.role === "sistema"
-                      ? msg.role === "sistema"
-                        ? "#1A1A1A"
-                        : "#FFF"
-                      : Cores.textoBolhaIA,
+                  color: msg.role === "user" ? "#FFF" : Cores.textoBolhaIA,
                   fontSize: 16,
                 }}
               >
@@ -443,6 +414,7 @@ export default function ChatIA() {
               </Text>
             </View>
           ))}
+
           {carregando && (
             <View
               style={[
@@ -471,10 +443,11 @@ export default function ChatIA() {
                 borderColor: Cores.borda,
               },
             ]}
-            placeholder="Ex: Gastei 300 reais, tô me sentindo culpado..."
+            placeholder="Responda aqui..."
             placeholderTextColor={Cores.textoSecundario}
             value={input}
             onChangeText={setInput}
+            onSubmitEditing={enviarMensagem}
           />
           <TouchableOpacity
             style={[
@@ -515,18 +488,18 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    height: 45,
+    height: 48,
     borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 15,
+    borderRadius: 24,
+    paddingHorizontal: 18,
     fontSize: 16,
   },
   btnEnviar: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 10,
+    marginLeft: 8,
   },
 });
