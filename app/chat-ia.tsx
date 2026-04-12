@@ -39,48 +39,51 @@ interface RespostaIA {
   message: string;
 }
 
-// FIX 1: prompt fora do componente — evita recriação a cada render
-const CATEGORIAS_RECEITA = ["Salário", "Presente", "Venda", "Outros"];
-const CATEGORIAS_DESPESA = [
-  "Alimentação",
-  "Transporte",
-  "Saúde",
-  "Lazer",
-  "Moradia",
-  "Outros",
-];
-
-const PROMPT_SISTEMA = `Você é uma consultora financeira simples e direta.
+// Prompt base — as contas reais do usuário são injetadas dinamicamente dentro do componente
+const PROMPT_BASE = `Você é uma consultora financeira simples e direta.
 
 REGRAS IMPORTANTES (siga sempre):
 - Responda APENAS com um JSON válido. Nada de texto antes ou depois.
-- Nunca use \`\`\`json, markdown ou tags <function...>.
+- Nunca use marcadores de código ou tags especiais.
 - Pergunte apenas UM campo por vez, na ordem abaixo.
 - Quando tiver TODOS os campos obrigatórios, mude status para "ready_for_confirmation", mostre resumo e pergunte se pode prosseguir.
+- Se o usuário mandar mensagem fora do contexto enquanto você aguarda um campo, IGNORE e continue perguntando o campo que falta.
 
 CAMPOS OBRIGATÓRIOS para create_transaction (colete nessa ordem):
-1. tipo → "receita" ou "despesa"
-2. value → valor numérico
-3. description → descrição da transação
-4. category → categoria (para receita: Salário, Presente, Venda, Outros | para despesa: Alimentação, Transporte, Saúde, Lazer, Moradia, Outros). Sempre liste as opções disponíveis ao perguntar.
-5. date → pergunte a data no formato DD/MM/YYYY (ex: 25/01/2025). Internamente converta para YYYY-MM-DD. Se o usuário quiser usar hoje, use a data atual.
+1. tipo: "receita" ou "despesa"
+2. value: valor numérico
+3. description: descrição da transação
+4. category: categoria. Sempre liste as opções ao perguntar.
+   Receita: Salário, Empréstimo, Presente, Venda, Investimento, Outros
+   Despesa: Alimentação, Transporte, Saúde, Lazer, Moradia, Educação, Outros
+   Se o usuário digitar algo parecido, normalize. Se não bater, use "Outros".
+5. conta_id: em qual conta lançar. Use a lista CONTAS_DISPONIVEIS abaixo. Mostre os nomes e peça para escolher. Salve o id numérico no campo conta_id.
+6. date: data no formato DD/MM/YYYY. Converta internamente para YYYY-MM-DD. Se quiser hoje, use a data atual.
 
 CAMPOS OBRIGATÓRIOS para create_account:
-1. nome → nome da conta
-2. saldo_inicial → saldo inicial numérico
+1. nome: nome da conta
+2. saldo_inicial: saldo inicial numérico
 
-Intents:
-- create_transaction → criar receita ou despesa
-- create_account → criar conta
-- delete_transaction → apagar transação
-- archive_account → arquivar conta
-- query → conversa normal
+Intents disponíveis:
+- create_transaction: criar receita ou despesa
+- create_account: criar conta
+- delete_transaction: apagar transação
+- archive_account: arquivar conta
+- query: conversa normal
 
-Exemplo coletando category:
-{"intent": "create_transaction", "status": "collecting_data", "data": {"tipo": "receita", "value": 100, "description": "Presente"}, "missing_fields": ["category"], "message": "Qual a categoria? As opções são: Salário, Presente, Venda, Outros."}
+Exemplo coletando conta:
+{"intent":"create_transaction","status":"collecting_data","data":{"tipo":"receita","value":500,"description":"Salário","category":"Salário"},"missing_fields":["conta_id"],"message":"Em qual conta deseja lançar? Opções: Nubank (1), Inter (2)."}
 
 Exemplo pronto para confirmar:
-{"intent": "create_transaction", "status": "ready_for_confirmation", "data": {"tipo": "receita", "value": 100, "description": "Presente", "category": "Presente", "date": "2025-01-15"}, "missing_fields": [], "message": "Resumo:\\nTipo: receita\\nValor: R$ 100\\nDescrição: Presente\\nCategoria: Presente\\nData: 25/01/2025\\n\\nPosso criar?"}
+{"intent":"create_transaction","status":"ready_for_confirmation","data":{"tipo":"receita","value":500,"description":"Salário","category":"Salário","conta_id":1,"date":"2025-01-15"},"missing_fields":[],"message":"Resumo:
+Tipo: receita
+Valor: R$ 500
+Descrição: Salário
+Categoria: Salário
+Conta: Nubank
+Data: 15/01/2025
+
+Posso criar?"}
 
 Responda SOMENTE com o JSON.`;
 
@@ -99,6 +102,19 @@ export default function ChatIA() {
   const currentIntentRef = useRef<RespostaIA["intent"] | null>(null);
   const currentStatusRef = useRef<RespostaIA["status"]>("collecting_data");
 
+  // Contas do usuário carregadas do Supabase
+  const [contasUsuario, setContasUsuario] = useState<
+    { id: number; nome: string }[]
+  >([]);
+
+  // Prompt dinâmico com as contas reais do usuário injetadas
+  const promptSistema =
+    contasUsuario.length > 0
+      ? PROMPT_BASE +
+        `\n\nCONTAS_DISPONIVEIS: ${contasUsuario.map((c) => `${c.nome} (id: ${c.id})`).join(", ")}`
+      : PROMPT_BASE +
+        "\n\nCONTAS_DISPONIVEIS: nenhuma conta encontrada (oriente o usuário a criar uma conta primeiro).";
+
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
     textoPrincipal: isDark ? "#ffffff" : "#1A1A1A",
@@ -111,30 +127,15 @@ export default function ChatIA() {
     bolhaSistema: "#E9C46A",
   };
 
-  const atualizarSaldo = async () => {
+  // Carrega contas ativas do usuário para o chat poder perguntar qual usar
+  const carregarContas = async () => {
     if (!session?.user?.id) return;
-    const { data: trans } = await supabase
-      .from("transacoes")
-      .select("valor, tipo, status")
-      .eq("user_id", session.user.id);
-
-    const { data: contas } = await supabase
+    const { data } = await supabase
       .from("contas")
-      .select("saldo_inicial")
-      .eq("user_id", session.user.id);
-
-    const inicial =
-      contas?.reduce((acc, c) => acc + (c.saldo_inicial || 0), 0) ?? 0;
-    const receitas =
-      trans
-        ?.filter((t) => t.tipo === "receita" && t.status === "paga")
-        .reduce((acc, t) => acc + (t.valor || 0), 0) ?? 0;
-    const despesas =
-      trans
-        ?.filter((t) => t.tipo === "despesa" && t.status === "paga")
-        .reduce((acc, t) => acc + (t.valor || 0), 0) ?? 0;
-
-    console.log("Saldo atualizado:", inicial + receitas - despesas);
+      .select("id, nome")
+      .eq("user_id", session.user.id)
+      .or("arquivado.eq.false,arquivado.is.null");
+    if (data) setContasUsuario(data);
   };
 
   // FIX 3: guard de session antes de salvar
@@ -176,6 +177,7 @@ export default function ChatIA() {
 
   useEffect(() => {
     inicializarChat();
+    carregarContas();
   }, []);
 
   useEffect(() => {
@@ -193,17 +195,23 @@ export default function ChatIA() {
   };
 
   const criarTransacao = async (data: Record<string, any>) => {
-    // FIX: cobre contas onde arquivado é false OU null (registros antigos)
-    const { data: contas, error: erroContas } = await supabase
-      .from("contas")
-      .select("id")
-      .eq("user_id", session?.user?.id)
-      .or("arquivado.eq.false,arquivado.is.null")
-      .limit(1);
+    // Usa conta_id informado pelo usuário via chat; fallback para primeira conta ativa
+    let contaId = data.conta_id ? Number(data.conta_id) : null;
 
-    console.log("🏦 Contas encontradas:", contas, "Erro:", erroContas);
+    if (!contaId) {
+      const { data: contas } = await supabase
+        .from("contas")
+        .select("id")
+        .eq("user_id", session?.user?.id)
+        .or("arquivado.eq.false,arquivado.is.null")
+        .limit(1);
+      contaId = contas?.[0]?.id ?? null;
+    }
 
-    if (!contas?.length) return "Nenhuma conta ativa encontrada.";
+    console.log("🏦 conta_id usado:", contaId);
+
+    if (!contaId)
+      return "Nenhuma conta ativa encontrada. Crie uma conta primeiro.";
 
     const { error } = await supabase.from("transacoes").insert({
       tipo: data.tipo,
@@ -211,12 +219,12 @@ export default function ChatIA() {
       descricao: `[${data.category || "Outros"}] ${data.description}`,
       status: "paga",
       data_vencimento: converterData(data.date),
-      conta_id: contas[0].id,
+      conta_id: contaId,
       user_id: session?.user?.id,
     });
 
     if (error) return `Erro ao criar: ${error.message}`;
-    await atualizarSaldo();
+    atualizarSaldo();
     return `✅ ${data.tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada com sucesso!`;
   };
 
@@ -229,7 +237,7 @@ export default function ChatIA() {
     });
 
     if (error) return `Erro ao criar conta: ${error.message}`;
-    await atualizarSaldo();
+    atualizarSaldo();
     return `✅ Conta "${data.nome}" criada com sucesso!`;
   };
 
@@ -254,7 +262,7 @@ export default function ChatIA() {
       .eq("id", found[0].id);
     if (error) return `Erro ao apagar: ${error.message}`;
 
-    await atualizarSaldo();
+    atualizarSaldo();
     return `✅ Transação apagada com sucesso!`;
   };
 
@@ -277,7 +285,7 @@ export default function ChatIA() {
       .eq("id", found[0].id);
 
     if (error) return `Erro ao arquivar: ${error.message}`;
-    await atualizarSaldo();
+    atualizarSaldo();
     return `✅ Conta "${data.nome}" arquivada com sucesso!`;
   };
 
@@ -330,7 +338,7 @@ export default function ChatIA() {
           body: JSON.stringify({
             model: MODELO,
             messages: [
-              { role: "system", content: PROMPT_SISTEMA },
+              { role: "system", content: promptSistema },
               ...historicoParaAPI,
             ],
             temperature: 0.1,
@@ -371,11 +379,20 @@ export default function ChatIA() {
         };
       }
 
-      // FIX 6: atualiza refs em vez de estados para que o valor esteja
-      // disponível imediatamente ainda dentro desta função async
+      // Se já há um intent em andamento (collecting_data), trava ele —
+      // impede que mensagens ambíguas do usuário troquem o intent no meio do fluxo
+      const intentEmAndamento =
+        currentIntentRef.current !== null &&
+        currentStatusRef.current === "collecting_data";
+
       const mergedData = { ...currentDataRef.current, ...respostaIA.data };
       currentDataRef.current = mergedData;
-      currentIntentRef.current = respostaIA.intent ?? currentIntentRef.current;
+
+      // Só atualiza o intent se não houver um em andamento
+      if (!intentEmAndamento) {
+        currentIntentRef.current =
+          respostaIA.intent ?? currentIntentRef.current;
+      }
       currentStatusRef.current = respostaIA.status ?? currentStatusRef.current;
 
       if (respostaIA.message) {
@@ -478,6 +495,7 @@ export default function ChatIA() {
     currentDataRef.current = {};
     currentIntentRef.current = null;
     currentStatusRef.current = "collecting_data";
+    carregarContas();
   };
 
   return (
@@ -642,3 +660,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
+function atualizarSaldo() {
+  throw new Error("Function not implemented.");
+}
