@@ -224,7 +224,7 @@ export default function ChatIA() {
     });
 
     if (error) return `Erro ao criar: ${error.message}`;
-    atualizarSaldo();
+    await carregarContas();
     return `✅ ${data.tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada com sucesso!`;
   };
 
@@ -237,7 +237,7 @@ export default function ChatIA() {
     });
 
     if (error) return `Erro ao criar conta: ${error.message}`;
-    atualizarSaldo();
+    await carregarContas();
     return `✅ Conta "${data.nome}" criada com sucesso!`;
   };
 
@@ -262,7 +262,7 @@ export default function ChatIA() {
       .eq("id", found[0].id);
     if (error) return `Erro ao apagar: ${error.message}`;
 
-    atualizarSaldo();
+    await carregarContas();
     return `✅ Transação apagada com sucesso!`;
   };
 
@@ -285,7 +285,7 @@ export default function ChatIA() {
       .eq("id", found[0].id);
 
     if (error) return `Erro ao arquivar: ${error.message}`;
-    atualizarSaldo();
+    await carregarContas();
     return `✅ Conta "${data.nome}" arquivada com sucesso!`;
   };
 
@@ -660,6 +660,3 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
-function atualizarSaldo() {
-  throw new Error("Function not implemented.");
-}
