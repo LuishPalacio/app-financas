@@ -128,7 +128,16 @@ export default function CaixinhasScreen() {
     }
   };
 
-  const deletarCaixinha = (id: number, nome: string) => {
+  const deletarCaixinha = (id: number, nome: string, saldoAtual: number) => {
+    // Bloqueia exclusão se ainda há saldo guardado
+    if (Number(saldoAtual) > 0) {
+      return Alert.alert(
+        "Ação não permitida",
+        `O objetivo "${nome}" ainda possui R$ ${Number(saldoAtual).toFixed(2)} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
+        [{ text: "Entendi", style: "cancel" }],
+      );
+    }
+
     Alert.alert(
       "Apagar Objetivo",
       `Tens a certeza que queres apagar "${nome}"?`,
@@ -297,7 +306,9 @@ export default function CaixinhasScreen() {
                   },
                 ]}
                 onPress={() => abrirMovimento(caixa)}
-                onLongPress={() => deletarCaixinha(caixa.id, caixa.nome)}
+                onLongPress={() =>
+                  deletarCaixinha(caixa.id, caixa.nome, caixa.saldo_atual)
+                }
                 activeOpacity={0.8}
               >
                 <View style={styles.cardHeader}>

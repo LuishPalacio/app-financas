@@ -3,16 +3,15 @@ import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
-  Button,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../lib/supabase"; // <-- NOSSO CABO DA NUVEM
+import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 
 interface Categoria {
@@ -80,6 +79,14 @@ const formatarMesAno = (yyyymm: string) => {
   return `${getNomeMes(mes)} ${ano}`;
 };
 
+// Proporções das colunas
+const COL_DATA = "14%";
+const COL_NOME = "28%";
+const COL_BANCO = "18%";
+const COL_VALOR = "20%";
+const COL_STATUS = "10%";
+const COL_DEL = "10%";
+
 export default function TransacoesScreen() {
   const { isDark, session } = useAppTheme();
 
@@ -91,8 +98,9 @@ export default function TransacoesScreen() {
     blocoData: isDark ? "#2C2C2C" : "#F0F0F0",
     borda: isDark ? "#333333" : "#EEEEEE",
     pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
-    transacaoBg: isDark ? "#121212" : "#FFF",
-    pendenteBg: isDark ? "#1A1A1A" : "#FAFAFA",
+    headerTabela: isDark ? "#252525" : "#F0F4F8",
+    rowPar: isDark ? "#161616" : "#FAFAFA",
+    rowImpar: isDark ? "#1C1C1C" : "#FFFFFF",
   };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -110,8 +118,16 @@ export default function TransacoesScreen() {
   const [modalFiltroTipo, setModalFiltroTipo] = useState(false);
 
   const hoje = new Date();
-  const mesAtualStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const anoAtualNum = hoje.getFullYear();
+  const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
+  const mesAtualStr = `${anoSelecionado}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const [mesSelecionado, setMesSelecionado] = useState<string>(mesAtualStr);
+
+  // Anos disponíveis: 3 anos atrás até 2 anos à frente
+  const anosDisponiveis = Array.from(
+    { length: 6 },
+    (_, i) => anoAtualNum - 3 + i,
+  );
 
   const carregarDados = async () => {
     if (!session?.user?.id) return;
@@ -142,11 +158,59 @@ export default function TransacoesScreen() {
         text: "Apagar",
         style: "destructive",
         onPress: async () => {
+          // Busca os dados da transação antes de apagar
+          const transacao = transacoes.find((t) => t.id === id);
+
           const { error } = await supabase
             .from("transacoes")
             .delete()
             .eq("id", id);
-          if (!error) carregarDados();
+
+          if (error) {
+            Alert.alert("Erro", "Não foi possível apagar a transação.");
+            return;
+          }
+
+          // Se a transação era de um objetivo, reverte o saldo da caixinha
+          if (transacao) {
+            const descricao = transacao.descricao ?? "";
+            let nomeCaixinha: string | null = null;
+            let operacao: "reverter_guardar" | "reverter_resgatar" | null =
+              null;
+
+            if (descricao.startsWith("Guardar em: ")) {
+              nomeCaixinha = descricao.replace("Guardar em: ", "").trim();
+              operacao = "reverter_guardar"; // subtraiu da conta → reverte diminuindo da caixinha
+            } else if (descricao.startsWith("Resgate de: ")) {
+              nomeCaixinha = descricao.replace("Resgate de: ", "").trim();
+              operacao = "reverter_resgatar"; // adicionou à conta → reverte adicionando na caixinha
+            }
+
+            if (nomeCaixinha && operacao) {
+              const { data: caixinhaData } = await supabase
+                .from("caixinhas")
+                .select("id, saldo_atual")
+                .ilike("nome", nomeCaixinha)
+                .single();
+
+              if (caixinhaData) {
+                const saldoAtual = Number(caixinhaData.saldo_atual);
+                const valorTransacao = Number(transacao.valor);
+
+                const novoSaldo =
+                  operacao === "reverter_guardar"
+                    ? Math.max(0, saldoAtual - valorTransacao) // remove o que foi guardado
+                    : saldoAtual + valorTransacao; // devolve o que foi resgatado
+
+                await supabase
+                  .from("caixinhas")
+                  .update({ saldo_atual: novoSaldo })
+                  .eq("id", caixinhaData.id);
+              }
+            }
+          }
+
+          carregarDados();
         },
       },
     ]);
@@ -203,20 +267,60 @@ export default function TransacoesScreen() {
       return dataB.localeCompare(dataA);
     });
 
-  const anoAtual = new Date().getFullYear();
   const mesesDoAno = Array.from(
     { length: 12 },
-    (_, i) => `${anoAtual}-${String(i + 1).padStart(2, "0")}`,
+    (_, i) => `${anoSelecionado}-${String(i + 1).padStart(2, "0")}`,
   );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
+      {/* CABEÇALHO */}
       <View style={[styles.header, { backgroundColor: Cores.fundo }]}>
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>
-          Livro-Caixa {anoAtual}
+          Extrato
         </Text>
       </View>
 
+      {/* SELETOR DE ANO */}
+      <View style={styles.anosScrollContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 15 }}
+        >
+          {anosDisponiveis.map((ano) => {
+            const isAtivo = anoSelecionado === ano;
+            return (
+              <TouchableOpacity
+                key={ano}
+                style={[
+                  styles.anoPill,
+                  {
+                    backgroundColor: isAtivo ? "#2A9D8F" : Cores.pillFundo,
+                    borderColor: isAtivo ? "#2A9D8F" : Cores.borda,
+                  },
+                ]}
+                onPress={() => {
+                  setAnoSelecionado(ano);
+                  const mesNum = mesSelecionado.split("-")[1];
+                  setMesSelecionado(`${ano}-${mesNum}`);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.anoPillText,
+                    { color: isAtivo ? "#FFF" : Cores.textoSecundario },
+                  ]}
+                >
+                  {ano}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* FILTROS */}
       <View style={styles.filterButtonsRow}>
         <TouchableOpacity
           style={[
@@ -308,6 +412,7 @@ export default function TransacoesScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* SELETOR DE MÊS */}
       <View style={styles.mesesScrollContainer}>
         <ScrollView
           horizontal
@@ -345,13 +450,15 @@ export default function TransacoesScreen() {
         </ScrollView>
       </View>
 
+      {/* TABELA */}
       <ScrollView style={styles.listContainer}>
         <View
           style={[
-            styles.monthBlock,
+            styles.tabelaCard,
             { backgroundColor: Cores.cardFundo, borderColor: Cores.borda },
           ]}
         >
+          {/* Cabeçalho do mês */}
           <View
             style={[
               styles.monthHeader,
@@ -366,17 +473,105 @@ export default function TransacoesScreen() {
             >
               {formatarMesAno(mesSelecionado)}
             </Text>
+            {transacoesDoMes.length > 0 && (
+              <Text
+                style={[styles.contadorText, { color: Cores.textoSecundario }]}
+              >
+                {transacoesDoMes.length} registro
+                {transacoesDoMes.length !== 1 ? "s" : ""}
+              </Text>
+            )}
           </View>
 
-          {transacoesDoMes.length === 0 ? (
+          {/* Cabeçalho das colunas */}
+          <View
+            style={[
+              styles.tabelaHeader,
+              { backgroundColor: Cores.headerTabela, borderColor: Cores.borda },
+            ]}
+          >
             <Text
-              style={[styles.emptyMonthText, { color: Cores.textoSecundario }]}
+              style={[
+                styles.colHeader,
+                { width: COL_DATA, color: Cores.textoSecundario },
+              ]}
             >
-              Nenhum registro encontrado com estes filtros.
+              DATA
             </Text>
+            <Text
+              style={[
+                styles.colHeader,
+                { width: COL_NOME, color: Cores.textoSecundario },
+              ]}
+            >
+              DESCRIÇÃO
+            </Text>
+            <Text
+              style={[
+                styles.colHeader,
+                { width: COL_BANCO, color: Cores.textoSecundario },
+              ]}
+            >
+              BANCO
+            </Text>
+            <Text
+              style={[
+                styles.colHeader,
+                {
+                  width: COL_VALOR,
+                  color: Cores.textoSecundario,
+                  textAlign: "right",
+                },
+              ]}
+            >
+              VALOR
+            </Text>
+            <Text
+              style={[
+                styles.colHeader,
+                {
+                  width: COL_STATUS,
+                  color: Cores.textoSecundario,
+                  textAlign: "center",
+                },
+              ]}
+            >
+              PAGO
+            </Text>
+            <Text
+              style={[
+                styles.colHeader,
+                {
+                  width: COL_DEL,
+                  color: Cores.textoSecundario,
+                  textAlign: "center",
+                },
+              ]}
+            >
+              DEL
+            </Text>
+          </View>
+
+          {/* Linhas da tabela */}
+          {transacoesDoMes.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <MaterialIcons
+                name="search-off"
+                size={36}
+                color={Cores.textoSecundario}
+                style={{ marginBottom: 8 }}
+              />
+              <Text
+                style={[
+                  styles.emptyMonthText,
+                  { color: Cores.textoSecundario },
+                ]}
+              >
+                Nenhum registro encontrado com estes filtros.
+              </Text>
+            </View>
           ) : (
-            transacoesDoMes.map((t) => {
-              const categoria = categorias.find((c) => c.id === t.categoria_id);
+            transacoesDoMes.map((t, index) => {
               const conta = contas.find((c) => c.id === t.conta_id);
               const estiloConta = conta
                 ? getEstiloBanco(conta.nome, isDark)
@@ -384,177 +579,245 @@ export default function TransacoesScreen() {
                     bg: isDark ? "#333" : "#E3F2FD",
                     text: isDark ? "#FFF" : "#1976D2",
                   };
-              const diaStr = (t.data_vencimento || "0000-00-00").split("-")[2];
-              const isTransferencia = t.descricao.includes("[Transf.]");
+
+              const partes = (t.data_vencimento || "0000-00-00").split("-");
+              const diaStr = partes[2];
+              const mesStr = partes[1];
               const isPendente = t.status === "pendente";
+              const isTransferencia = t.descricao.includes("[Transf.]");
+              const corValor = isTransferencia
+                ? "#F4A261"
+                : t.tipo === "receita"
+                  ? "#2A9D8F"
+                  : "#E76F51";
+              const prefixoValor = t.tipo === "receita" ? "+" : "-";
+              const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
 
               return (
                 <View
                   key={t.id}
                   style={[
-                    styles.transactionItem,
+                    styles.tabelaRow,
                     {
                       backgroundColor: isPendente
-                        ? Cores.pendenteBg
-                        : Cores.transacaoBg,
+                        ? isDark
+                          ? "#1A1200"
+                          : "#FFFDE7"
+                        : bgRow,
                       borderColor: Cores.borda,
                     },
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.dateBox,
-                      { backgroundColor: Cores.blocoData },
-                    ]}
-                  >
-                    <Text
+                  {/* COLUNA: DATA */}
+                  <View style={[styles.colCell, { width: COL_DATA }]}>
+                    <View
                       style={[
-                        styles.dateBoxDay,
-                        { color: Cores.textoPrincipal },
+                        styles.dataBadge,
+                        { backgroundColor: Cores.blocoData },
                       ]}
                     >
-                      {diaStr}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.dateBoxLabel,
-                        { color: Cores.textoSecundario },
-                      ]}
-                    >
-                      Dia
-                    </Text>
+                      <Text
+                        style={[
+                          styles.dataDia,
+                          { color: Cores.textoPrincipal },
+                        ]}
+                      >
+                        {diaStr}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.dataMes,
+                          { color: Cores.textoSecundario },
+                        ]}
+                      >
+                        {getNomeMes(mesStr)?.substring(0, 3).toUpperCase()}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.transactionInfo}>
+
+                  {/* COLUNA: NOME/DESCRIÇÃO */}
+                  <View style={[styles.colCell, { width: COL_NOME }]}>
                     <Text
                       style={[
-                        styles.transactionDesc,
+                        styles.nomeText,
                         {
                           color: isPendente
                             ? Cores.textoSecundario
                             : Cores.textoPrincipal,
                         },
                       ]}
+                      numberOfLines={2}
                     >
                       {t.descricao}
                     </Text>
-                    <View style={styles.transactionTags}>
-                      {isPendente && (
-                        <View
-                          style={[
-                            styles.tagPill,
-                            { backgroundColor: isDark ? "#4A1919" : "#FFEBEB" },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.tagText,
-                              { color: isDark ? "#FF6B6B" : "#D32F2F" },
-                            ]}
-                          >
-                            Pendente
-                          </Text>
-                        </View>
-                      )}
-                      {isTransferencia ? (
-                        <View
-                          style={[
-                            styles.tagPill,
-                            { backgroundColor: isDark ? "#4D2C00" : "#FFF3E0" },
-                          ]}
-                        >
-                          <MaterialIcons
-                            name="swap-horiz"
-                            size={12}
-                            color="#F4A261"
-                            style={{ marginRight: 4 }}
-                          />
-                          <Text style={[styles.tagText, { color: "#F4A261" }]}>
-                            Transferência
-                          </Text>
-                        </View>
-                      ) : categoria ? (
-                        <View
-                          style={[
-                            styles.tagPill,
-                            { backgroundColor: isDark ? "#333" : "#F0F0F0" },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.colorDot,
-                              { backgroundColor: categoria.cor },
-                            ]}
-                          />
-                          <Text
-                            style={[
-                              styles.tagText,
-                              { color: Cores.textoPrincipal },
-                            ]}
-                          >
-                            {categoria.nome}
-                          </Text>
-                        </View>
-                      ) : null}
-                      {conta && (
-                        <View
-                          style={[
-                            styles.tagPill,
-                            { backgroundColor: estiloConta.bg },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.tagText,
-                              { color: estiloConta.text },
-                            ]}
-                          >
-                            {conta.nome}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                    {isPendente && (
+                      <View style={styles.pendentePill}>
+                        <Text style={styles.pendenteText}>Pendente</Text>
+                      </View>
+                    )}
+                    {isTransferencia && (
+                      <View style={styles.transferPill}>
+                        <MaterialIcons
+                          name="swap-horiz"
+                          size={9}
+                          color="#F4A261"
+                        />
+                        <Text style={styles.transferText}>Transf.</Text>
+                      </View>
+                    )}
                   </View>
-                  <View style={styles.transactionRight}>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text
+
+                  {/* COLUNA: BANCO */}
+                  <View style={[styles.colCell, { width: COL_BANCO }]}>
+                    {conta ? (
+                      <View
                         style={[
-                          styles.transactionValue,
-                          {
-                            color: t.tipo === "receita" ? "#2A9D8F" : "#E76F51",
-                          },
-                          isPendente && { color: Cores.textoSecundario },
+                          styles.bancoBadge,
+                          { backgroundColor: estiloConta.bg },
                         ]}
                       >
-                        {t.tipo === "receita" ? "+" : "-"} R${" "}
-                        {t.valor.toFixed(2)}
+                        <Text
+                          style={[
+                            styles.bancoText,
+                            { color: estiloConta.text },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {conta.nome}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text
+                        style={[
+                          styles.semDadoText,
+                          { color: Cores.textoSecundario },
+                        ]}
+                      >
+                        —
                       </Text>
-                    </View>
+                    )}
+                  </View>
+
+                  {/* COLUNA: VALOR */}
+                  <View
+                    style={[
+                      styles.colCell,
+                      { width: COL_VALOR, alignItems: "flex-end" },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.valorText,
+                        {
+                          color: isPendente ? Cores.textoSecundario : corValor,
+                        },
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {prefixoValor} R${t.valor.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {/* COLUNA: STATUS (PAGO) */}
+                  <View
+                    style={[
+                      styles.colCell,
+                      { width: COL_STATUS, alignItems: "center" },
+                    ]}
+                  >
                     <TouchableOpacity
                       onPress={() => alternarStatus(t.id, t.status)}
-                      style={styles.actionIcon}
+                      style={styles.statusBtn}
                     >
                       <MaterialIcons
                         name={
                           isPendente ? "radio-button-unchecked" : "check-circle"
                         }
-                        size={26}
+                        size={24}
                         color={isPendente ? Cores.textoSecundario : "#2A9D8F"}
                       />
                     </TouchableOpacity>
+                  </View>
+
+                  {/* COLUNA: EXCLUIR */}
+                  <View
+                    style={[
+                      styles.colCell,
+                      { width: COL_DEL, alignItems: "center" },
+                    ]}
+                  >
                     <TouchableOpacity
                       onPress={() => deletarTransacao(t.id)}
-                      style={styles.actionIcon}
+                      style={styles.deleteBtn}
                     >
                       <MaterialIcons
                         name="delete-outline"
-                        size={24}
-                        color={Cores.textoSecundario}
+                        size={22}
+                        color={isDark ? "#FF6B6B" : "#D32F2F"}
                       />
                     </TouchableOpacity>
                   </View>
                 </View>
               );
             })
+          )}
+
+          {/* Rodapé com totais */}
+          {transacoesDoMes.length > 0 && (
+            <View
+              style={[
+                styles.tabelaFooter,
+                {
+                  backgroundColor: Cores.headerTabela,
+                  borderColor: Cores.borda,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.footerLabel, { color: Cores.textoSecundario }]}
+              >
+                Total do mês
+              </Text>
+              <View style={styles.footerTotais}>
+                <View style={styles.footerItem}>
+                  <MaterialIcons
+                    name="arrow-upward"
+                    size={12}
+                    color="#2A9D8F"
+                  />
+                  <Text style={styles.footerValorReceita}>
+                    R${" "}
+                    {transacoesDoMes
+                      .filter(
+                        (t) =>
+                          t.tipo === "receita" &&
+                          !t.descricao.includes("[Transf.]"),
+                      )
+                      .reduce((acc, t) => acc + t.valor, 0)
+                      .toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.footerItem}>
+                  <MaterialIcons
+                    name="arrow-downward"
+                    size={12}
+                    color="#E76F51"
+                  />
+                  <Text style={styles.footerValorDespesa}>
+                    R${" "}
+                    {transacoesDoMes
+                      .filter(
+                        (t) =>
+                          t.tipo === "despesa" &&
+                          !t.descricao.includes("[Transf.]"),
+                      )
+                      .reduce((acc, t) => acc + t.valor, 0)
+                      .toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+            </View>
           )}
         </View>
         <View style={{ height: 40 }} />
@@ -575,88 +838,66 @@ export default function TransacoesScreen() {
               Filtrar por Tipo
             </Text>
             <View style={styles.wrapContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.filterPill,
-                  { backgroundColor: Cores.pillFundo },
-                  filtroTipo === "todas" && {
-                    backgroundColor: Cores.textoPrincipal,
-                  },
-                ]}
-                onPress={() => setFiltroTipo("todas")}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    { color: Cores.textoSecundario },
-                    filtroTipo === "todas" && { color: Cores.fundo },
-                  ]}
-                >
-                  Mostrar Tudo
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterPill,
-                  { backgroundColor: Cores.pillFundo },
-                  filtroTipo === "receita" && { backgroundColor: "#2A9D8F" },
-                ]}
-                onPress={() => setFiltroTipo("receita")}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    { color: Cores.textoSecundario },
-                    filtroTipo === "receita" && { color: "#FFF" },
-                  ]}
-                >
-                  Receitas
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterPill,
-                  { backgroundColor: Cores.pillFundo },
-                  filtroTipo === "despesa" && { backgroundColor: "#E76F51" },
-                ]}
-                onPress={() => setFiltroTipo("despesa")}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    { color: Cores.textoSecundario },
-                    filtroTipo === "despesa" && { color: "#FFF" },
-                  ]}
-                >
-                  Despesas
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterPill,
-                  { backgroundColor: Cores.pillFundo },
-                  filtroTipo === "transferencia" && {
-                    backgroundColor: "#F4A261",
-                  },
-                ]}
-                onPress={() => setFiltroTipo("transferencia")}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    { color: Cores.textoSecundario },
-                    filtroTipo === "transferencia" && { color: "#FFF" },
-                  ]}
-                >
-                  Transferências
-                </Text>
-              </TouchableOpacity>
+              {[
+                {
+                  key: "todas" as const,
+                  label: "Mostrar Tudo",
+                  bgAtivo: "#457B9D",
+                  textAtivo: "#FFF",
+                },
+                {
+                  key: "receita" as const,
+                  label: "Receitas",
+                  bgAtivo: "#2A9D8F",
+                  textAtivo: "#FFF",
+                },
+                {
+                  key: "despesa" as const,
+                  label: "Despesas",
+                  bgAtivo: "#E76F51",
+                  textAtivo: "#FFF",
+                },
+                {
+                  key: "transferencia" as const,
+                  label: "Transferências",
+                  bgAtivo: "#F4A261",
+                  textAtivo: "#FFF",
+                },
+              ].map((op) => {
+                const isAtivo = filtroTipo === op.key;
+                return (
+                  <TouchableOpacity
+                    key={op.key}
+                    style={[
+                      styles.filterPill,
+                      {
+                        backgroundColor: isAtivo ? op.bgAtivo : Cores.pillFundo,
+                        borderWidth: 1,
+                        borderColor: isAtivo ? op.bgAtivo : Cores.borda,
+                      },
+                    ]}
+                    onPress={() => setFiltroTipo(op.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterPillText,
+                        {
+                          color: isAtivo ? op.textAtivo : Cores.textoPrincipal,
+                        },
+                      ]}
+                    >
+                      {op.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-            <Button
-              title="Aplicar"
-              color={isDark ? "#FFF" : "#1A1A1A"}
+            <TouchableOpacity
+              style={[styles.modalBotaoAplicar, { backgroundColor: "#2A9D8F" }]}
               onPress={() => setModalFiltroTipo(false)}
-            />
+            >
+              <Text style={styles.modalBotaoTexto}>Aplicar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -678,9 +919,12 @@ export default function TransacoesScreen() {
               <TouchableOpacity
                 style={[
                   styles.filterPill,
-                  { backgroundColor: Cores.pillFundo },
-                  filtroContas.length === 0 && {
-                    backgroundColor: Cores.textoPrincipal,
+                  {
+                    backgroundColor:
+                      filtroContas.length === 0 ? "#457B9D" : Cores.pillFundo,
+                    borderWidth: 1,
+                    borderColor:
+                      filtroContas.length === 0 ? "#457B9D" : Cores.borda,
                   },
                 ]}
                 onPress={() => setFiltroContas([])}
@@ -688,8 +932,12 @@ export default function TransacoesScreen() {
                 <Text
                   style={[
                     styles.filterPillText,
-                    { color: Cores.textoSecundario },
-                    filtroContas.length === 0 && { color: Cores.fundo },
+                    {
+                      color:
+                        filtroContas.length === 0
+                          ? "#FFF"
+                          : Cores.textoPrincipal,
+                    },
                   ]}
                 >
                   Todas
@@ -700,9 +948,14 @@ export default function TransacoesScreen() {
                   key={`fc-${c.id}`}
                   style={[
                     styles.filterPill,
-                    { backgroundColor: Cores.pillFundo },
-                    filtroContas.includes(c.id) && {
-                      backgroundColor: Cores.textoPrincipal,
+                    {
+                      backgroundColor: filtroContas.includes(c.id)
+                        ? "#457B9D"
+                        : Cores.pillFundo,
+                      borderWidth: 1,
+                      borderColor: filtroContas.includes(c.id)
+                        ? "#457B9D"
+                        : Cores.borda,
                     },
                   ]}
                   onPress={() => toggleFiltroConta(c.id)}
@@ -710,8 +963,11 @@ export default function TransacoesScreen() {
                   <Text
                     style={[
                       styles.filterPillText,
-                      { color: Cores.textoSecundario },
-                      filtroContas.includes(c.id) && { color: Cores.fundo },
+                      {
+                        color: filtroContas.includes(c.id)
+                          ? "#FFF"
+                          : Cores.textoPrincipal,
+                      },
                     ]}
                   >
                     {c.nome}
@@ -719,11 +975,12 @@ export default function TransacoesScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-            <Button
-              title="Aplicar"
-              color="#457B9D"
+            <TouchableOpacity
+              style={[styles.modalBotaoAplicar, { backgroundColor: "#457B9D" }]}
               onPress={() => setModalFiltroConta(false)}
-            />
+            >
+              <Text style={styles.modalBotaoTexto}>Aplicar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -745,9 +1002,14 @@ export default function TransacoesScreen() {
               <TouchableOpacity
                 style={[
                   styles.filterPill,
-                  { backgroundColor: Cores.pillFundo },
-                  filtroCategorias.length === 0 && {
-                    backgroundColor: Cores.textoPrincipal,
+                  {
+                    backgroundColor:
+                      filtroCategorias.length === 0
+                        ? "#2A9D8F"
+                        : Cores.pillFundo,
+                    borderWidth: 1,
+                    borderColor:
+                      filtroCategorias.length === 0 ? "#2A9D8F" : Cores.borda,
                   },
                 ]}
                 onPress={() => setFiltroCategorias([])}
@@ -755,8 +1017,12 @@ export default function TransacoesScreen() {
                 <Text
                   style={[
                     styles.filterPillText,
-                    { color: Cores.textoSecundario },
-                    filtroCategorias.length === 0 && { color: Cores.fundo },
+                    {
+                      color:
+                        filtroCategorias.length === 0
+                          ? "#FFF"
+                          : Cores.textoPrincipal,
+                    },
                   ]}
                 >
                   Todas
@@ -769,9 +1035,14 @@ export default function TransacoesScreen() {
                     key={`fcat-${c.id}`}
                     style={[
                       styles.filterPill,
-                      { backgroundColor: Cores.pillFundo },
-                      filtroCategorias.includes(c.id) && {
-                        backgroundColor: Cores.textoPrincipal,
+                      {
+                        backgroundColor: filtroCategorias.includes(c.id)
+                          ? c.cor
+                          : Cores.pillFundo,
+                        borderWidth: 1,
+                        borderColor: filtroCategorias.includes(c.id)
+                          ? c.cor
+                          : Cores.borda,
                       },
                     ]}
                     onPress={() => toggleFiltroCategoria(c.id)}
@@ -779,15 +1050,22 @@ export default function TransacoesScreen() {
                     <View
                       style={[
                         styles.colorDot,
-                        { backgroundColor: c.cor, width: 8, height: 8 },
+                        {
+                          backgroundColor: filtroCategorias.includes(c.id)
+                            ? "#FFF"
+                            : c.cor,
+                          width: 8,
+                          height: 8,
+                        },
                       ]}
                     />
                     <Text
                       style={[
                         styles.filterPillText,
-                        { color: Cores.textoSecundario },
-                        filtroCategorias.includes(c.id) && {
-                          color: Cores.fundo,
+                        {
+                          color: filtroCategorias.includes(c.id)
+                            ? "#FFF"
+                            : Cores.textoPrincipal,
                         },
                       ]}
                     >
@@ -796,11 +1074,12 @@ export default function TransacoesScreen() {
                   </TouchableOpacity>
                 ))}
             </View>
-            <Button
-              title="Aplicar"
-              color="#2A9D8F"
+            <TouchableOpacity
+              style={[styles.modalBotaoAplicar, { backgroundColor: "#2A9D8F" }]}
               onPress={() => setModalFiltroCat(false)}
-            />
+            >
+              <Text style={styles.modalBotaoTexto}>Aplicar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -819,6 +1098,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   title: { fontSize: 24, fontWeight: "bold" },
+
   filterButtonsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -836,6 +1116,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   mainFilterText: { marginLeft: 4, fontSize: 13, fontWeight: "bold" },
+
   mesesScrollContainer: { marginBottom: 15 },
   mesPill: {
     paddingHorizontal: 16,
@@ -845,66 +1126,135 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   mesPillText: { fontSize: 13, fontWeight: "600", textTransform: "capitalize" },
-  listContainer: { flex: 1, paddingHorizontal: 20 },
-  monthBlock: {
+
+  // Seletor de ano
+  anosScrollContainer: { marginBottom: 8 },
+  anoPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+  },
+  anoPillText: { fontSize: 14, fontWeight: "700" },
+
+  listContainer: { flex: 1, paddingHorizontal: 12 },
+  tabelaCard: {
     marginBottom: 20,
     borderRadius: 12,
     borderWidth: 1,
     overflow: "hidden",
   },
+
   monthHeader: {
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   monthHeaderText: {
     fontSize: 16,
     fontWeight: "bold",
     textTransform: "capitalize",
   },
-  emptyMonthText: {
-    fontStyle: "italic",
-    textAlign: "center",
-    padding: 20,
-    fontSize: 13,
-  },
-  transactionItem: {
+  contadorText: { fontSize: 12 },
+
+  tabelaHeader: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
   },
-  dateBox: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginRight: 15,
-    minWidth: 45,
+  colHeader: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  dateBoxDay: { fontSize: 18, fontWeight: "bold" },
-  dateBoxLabel: { fontSize: 10, textTransform: "uppercase", marginTop: -2 },
-  transactionInfo: { flex: 1 },
-  transactionDesc: { fontSize: 16, fontWeight: "600", marginBottom: 6 },
-  transactionTags: {
+
+  tabelaRow: {
     flexDirection: "row",
     alignItems: "center",
-    flexWrap: "wrap",
-  },
-  tagPill: {
-    flexDirection: "row",
-    alignItems: "center",
+    paddingVertical: 10,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 6,
-    marginBottom: 4,
+    borderBottomWidth: 1,
+    minHeight: 56,
   },
-  tagText: { fontSize: 11, fontWeight: "bold" },
-  transactionRight: { flexDirection: "row", alignItems: "center" },
-  transactionValue: { fontSize: 16, fontWeight: "bold", marginBottom: 4 },
-  actionIcon: { padding: 4, marginLeft: 6 },
+  colCell: {
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+
+  dataBadge: {
+    alignItems: "center",
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 5,
+  },
+  dataDia: { fontSize: 15, fontWeight: "bold", lineHeight: 18 },
+  dataMes: { fontSize: 9, fontWeight: "600", lineHeight: 12 },
+
+  nomeText: { fontSize: 13, fontWeight: "600", lineHeight: 17 },
+  pendentePill: {
+    marginTop: 3,
+    alignSelf: "flex-start",
+    backgroundColor: "#4A1919",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  pendenteText: { fontSize: 9, fontWeight: "700", color: "#FF6B6B" },
+  transferPill: {
+    marginTop: 3,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#4D2C00",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  transferText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#F4A261",
+    marginLeft: 2,
+  },
+
+  bancoBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  bancoText: { fontSize: 11, fontWeight: "700" },
+  semDadoText: { fontSize: 14, textAlign: "center" },
+
+  valorText: { fontSize: 13, fontWeight: "700", textAlign: "right" },
+
+  statusBtn: { alignItems: "center", justifyContent: "center", padding: 4 },
+  deleteBtn: { alignItems: "center", justifyContent: "center", padding: 4 },
+
+  emptyContainer: { alignItems: "center", paddingVertical: 40 },
+  emptyMonthText: { fontStyle: "italic", fontSize: 13, textAlign: "center" },
+
+  tabelaFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+  },
+  footerLabel: { fontSize: 11, fontWeight: "600" },
+  footerTotais: { flexDirection: "row", gap: 16 },
+  footerItem: { flexDirection: "row", alignItems: "center", gap: 3 },
+  footerValorReceita: { fontSize: 13, fontWeight: "700", color: "#2A9D8F" },
+  footerValorDespesa: { fontSize: 13, fontWeight: "700", color: "#E76F51" },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
@@ -934,4 +1284,11 @@ const styles = StyleSheet.create({
   },
   filterPillText: { fontSize: 14, fontWeight: "500" },
   colorDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+
+  modalBotaoAplicar: {
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  modalBotaoTexto: { fontSize: 15, fontWeight: "700", color: "#FFF" },
 });
