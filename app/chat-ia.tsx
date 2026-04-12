@@ -27,12 +27,62 @@ interface Mensagem {
 }
 
 interface RespostaIA {
-  intent: "create_transaction" | "create_account" | "query";
+  intent:
+    | "create_transaction"
+    | "create_account"
+    | "delete_transaction"
+    | "archive_account"
+    | "query";
   status: "collecting_data" | "ready_for_confirmation" | "confirmed";
   data: Record<string, any>;
   missing_fields: string[];
   message: string;
 }
+
+// FIX 1: prompt fora do componente — evita recriação a cada render
+const CATEGORIAS_RECEITA = ["Salário", "Presente", "Venda", "Outros"];
+const CATEGORIAS_DESPESA = [
+  "Alimentação",
+  "Transporte",
+  "Saúde",
+  "Lazer",
+  "Moradia",
+  "Outros",
+];
+
+const PROMPT_SISTEMA = `Você é uma consultora financeira simples e direta.
+
+REGRAS IMPORTANTES (siga sempre):
+- Responda APENAS com um JSON válido. Nada de texto antes ou depois.
+- Nunca use \`\`\`json, markdown ou tags <function...>.
+- Pergunte apenas UM campo por vez, na ordem abaixo.
+- Quando tiver TODOS os campos obrigatórios, mude status para "ready_for_confirmation", mostre resumo e pergunte se pode prosseguir.
+
+CAMPOS OBRIGATÓRIOS para create_transaction (colete nessa ordem):
+1. tipo → "receita" ou "despesa"
+2. value → valor numérico
+3. description → descrição da transação
+4. category → categoria (para receita: Salário, Presente, Venda, Outros | para despesa: Alimentação, Transporte, Saúde, Lazer, Moradia, Outros). Sempre liste as opções disponíveis ao perguntar.
+5. date → pergunte a data no formato DD/MM/YYYY (ex: 25/01/2025). Internamente converta para YYYY-MM-DD. Se o usuário quiser usar hoje, use a data atual.
+
+CAMPOS OBRIGATÓRIOS para create_account:
+1. nome → nome da conta
+2. saldo_inicial → saldo inicial numérico
+
+Intents:
+- create_transaction → criar receita ou despesa
+- create_account → criar conta
+- delete_transaction → apagar transação
+- archive_account → arquivar conta
+- query → conversa normal
+
+Exemplo coletando category:
+{"intent": "create_transaction", "status": "collecting_data", "data": {"tipo": "receita", "value": 100, "description": "Presente"}, "missing_fields": ["category"], "message": "Qual a categoria? As opções são: Salário, Presente, Venda, Outros."}
+
+Exemplo pronto para confirmar:
+{"intent": "create_transaction", "status": "ready_for_confirmation", "data": {"tipo": "receita", "value": 100, "description": "Presente", "category": "Presente", "date": "2025-01-15"}, "missing_fields": [], "message": "Resumo:\\nTipo: receita\\nValor: R$ 100\\nDescrição: Presente\\nCategoria: Presente\\nData: 25/01/2025\\n\\nPosso criar?"}
+
+Responda SOMENTE com o JSON.`;
 
 export default function ChatIA() {
   const { isDark, session } = useAppTheme();
@@ -43,12 +93,11 @@ export default function ChatIA() {
   const [carregando, setCarregando] = useState(false);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
 
-  const [currentData, setCurrentData] = useState<Record<string, any>>({});
-  const [currentIntent, setCurrentIntent] = useState<
-    RespostaIA["intent"] | null
-  >(null);
-  const [currentStatus, setCurrentStatus] =
-    useState<RespostaIA["status"]>("collecting_data");
+  // FIX 2: refs para currentData, currentIntent e currentStatus
+  // evitam stale closures dentro de funções async
+  const currentDataRef = useRef<Record<string, any>>({});
+  const currentIntentRef = useRef<RespostaIA["intent"] | null>(null);
+  const currentStatusRef = useRef<RespostaIA["status"]>("collecting_data");
 
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
@@ -79,31 +128,47 @@ export default function ChatIA() {
     const receitas =
       trans
         ?.filter((t) => t.tipo === "receita" && t.status === "paga")
-        .reduce((acc, t) => acc + t.valor, 0) ?? 0;
+        .reduce((acc, t) => acc + (t.valor || 0), 0) ?? 0;
     const despesas =
       trans
         ?.filter((t) => t.tipo === "despesa" && t.status === "paga")
-        .reduce((acc, t) => acc + t.valor, 0) ?? 0;
+        .reduce((acc, t) => acc + (t.valor || 0), 0) ?? 0;
 
     console.log("Saldo atualizado:", inicial + receitas - despesas);
   };
 
+  // FIX 3: guard de session antes de salvar
   const salvarMensagem = async (role: string, texto: string) => {
+    if (!session?.user?.id) return;
     try {
       await supabase.from("chat_historico").insert({
-        user_id: session?.user?.id,
+        user_id: session.user.id,
         role,
         texto,
         created_at: new Date().toISOString(),
       });
-    } catch {}
+    } catch (e) {
+      console.error("Erro ao salvar mensagem:", e);
+    }
   };
 
+  // FIX 4: verifica histórico local antes de mostrar boas-vindas
   const inicializarChat = async () => {
+    const salvo = await AsyncStorage.getItem("@historico_chat");
+    if (salvo) {
+      try {
+        const parsed: Mensagem[] = JSON.parse(salvo);
+        if (parsed.length > 0) {
+          setMensagens(parsed);
+          return;
+        }
+      } catch (_) {}
+    }
+
     const boasVindas: Mensagem = {
       id: "1",
       role: "ia",
-      texto: "Olá! Sou sua consultora financeira. Como posso ajudar?",
+      texto: "Olá! Sou sua consultora financeira. Como posso ajudar hoje?",
     };
     setMensagens([boasVindas]);
     await salvarMensagem("ia", boasVindas.texto);
@@ -119,71 +184,101 @@ export default function ChatIA() {
     }
   }, [mensagens]);
 
-  const promptSistema = `Você é uma consultora financeira simples e direta.
-
-REGRAS IMPORTANTES:
-- Se o usuário disser "criar conta", "nova conta", "crie uma conta" → intent: "create_account"
-- Caso contrário → intent: "create_transaction"
-- Pergunte APENAS UM campo por vez (nunca liste vários).
-- Quando todos os campos estiverem coletados, mostre resumo + "Posso criar?"
-- Responda SEMPRE apenas com JSON válido.
-
-Exemplo para transação:
-{
-  "intent": "create_transaction",
-  "status": "collecting_data",
-  "data": {"tipo": "receita", "value": 1000},
-  "missing_fields": ["description"],
-  "message": "Qual a descrição?"
-}
-
-Quando pronto:
-{
-  "intent": "create_transaction",
-  "status": "ready_for_confirmation",
-  "data": {...},
-  "missing_fields": [],
-  "message": "Tipo: receita\\nValor: 1000\\nDescrição: ...\\nCategoria: ...\\nConta: ...\\nData: ...\\n\\nPosso criar?"
-}
-
-Responda apenas com o JSON.`;
+  // Converte DD/MM/YYYY → YYYY-MM-DD; retorna o valor original se já estiver correto ou for inválido
+  const converterData = (data: string | undefined): string => {
+    if (!data) return new Date().toISOString().split("T")[0];
+    const match = data.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    return data; // já está em YYYY-MM-DD ou outro formato
+  };
 
   const criarTransacao = async (data: Record<string, any>) => {
-    const { data: contas } = await supabase
+    // FIX: cobre contas onde arquivado é false OU null (registros antigos)
+    const { data: contas, error: erroContas } = await supabase
       .from("contas")
       .select("id")
       .eq("user_id", session?.user?.id)
+      .or("arquivado.eq.false,arquivado.is.null")
       .limit(1);
 
-    if (!contas?.length) return "Nenhuma conta encontrada.";
+    console.log("🏦 Contas encontradas:", contas, "Erro:", erroContas);
+
+    if (!contas?.length) return "Nenhuma conta ativa encontrada.";
 
     const { error } = await supabase.from("transacoes").insert({
       tipo: data.tipo,
       valor: Number(data.value),
       descricao: `[${data.category || "Outros"}] ${data.description}`,
       status: "paga",
-      data_vencimento: data.date || new Date().toISOString().split("T")[0],
+      data_vencimento: converterData(data.date),
       conta_id: contas[0].id,
       user_id: session?.user?.id,
     });
 
     if (error) return `Erro ao criar: ${error.message}`;
-
     await atualizarSaldo();
-    return `✅ ${data.tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada com sucesso.`;
+    return `✅ ${data.tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada com sucesso!`;
   };
 
   const criarConta = async (data: Record<string, any>) => {
     const { error } = await supabase.from("contas").insert({
       user_id: session?.user?.id,
-      nome: data.nome || data.description,
+      nome: data.nome || "Nova Conta",
       saldo_inicial: Number(data.saldo_inicial || 0),
+      arquivado: false,
     });
 
     if (error) return `Erro ao criar conta: ${error.message}`;
+    await atualizarSaldo();
+    return `✅ Conta "${data.nome}" criada com sucesso!`;
+  };
+
+  const deletarTransacao = async (data: Record<string, any>) => {
+    let query = supabase
+      .from("transacoes")
+      .select("id")
+      .eq("user_id", session?.user?.id)
+      .limit(3);
+
+    if (data.description)
+      query = query.ilike("descricao", `%${data.description}%`);
+    if (data.date) query = query.eq("data_vencimento", data.date);
+
+    const { data: found } = await query;
+
+    if (!found?.length) return "Nenhuma transação encontrada com esses dados.";
+
+    const { error } = await supabase
+      .from("transacoes")
+      .delete()
+      .eq("id", found[0].id);
+    if (error) return `Erro ao apagar: ${error.message}`;
 
     await atualizarSaldo();
-    return `✅ Conta "${data.nome || data.description}" criada com sucesso!`;
+    return `✅ Transação apagada com sucesso!`;
+  };
+
+  const arquivarConta = async (data: Record<string, any>) => {
+    let query = supabase
+      .from("contas")
+      .select("id")
+      .eq("user_id", session?.user?.id)
+      .limit(1);
+
+    if (data.nome) query = query.ilike("nome", `%${data.nome}%`);
+
+    const { data: found } = await query;
+
+    if (!found?.length) return "Nenhuma conta encontrada.";
+
+    const { error } = await supabase
+      .from("contas")
+      .update({ arquivado: true })
+      .eq("id", found[0].id);
+
+    if (error) return `Erro ao arquivar: ${error.message}`;
+    await atualizarSaldo();
+    return `✅ Conta "${data.nome}" arquivada com sucesso!`;
   };
 
   const enviarMensagem = async () => {
@@ -192,12 +287,12 @@ Responda apenas com o JSON.`;
     const textoUsuario = input.trim();
     setInput("");
 
-    // Adiciona mensagem do usuário imediatamente
     const novaMsg: Mensagem = {
       id: Date.now().toString(),
       role: "user",
       texto: textoUsuario,
     };
+
     const novasMensagens = [...mensagens, novaMsg];
     setMensagens(novasMensagens);
     await salvarMensagem("user", textoUsuario);
@@ -205,12 +300,24 @@ Responda apenas com o JSON.`;
     setCarregando(true);
 
     try {
+      // Valida chave antes de chamar a API
+      if (!GROQ_API_KEY) {
+        throw new Error(
+          "GROQ_API_KEY não encontrada. Verifique o arquivo .env",
+        );
+      }
+
       const historicoParaAPI = novasMensagens
         .filter((m) => m.role !== "sistema")
         .map((m) => ({
           role: m.role === "user" ? "user" : "assistant",
           content: m.texto,
         }));
+
+      console.log(
+        "📡 Chamando Groq API... chave:",
+        GROQ_API_KEY ? "✅ presente" : "❌ ausente",
+      );
 
       const resAPI = await fetch(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -223,42 +330,53 @@ Responda apenas com o JSON.`;
           body: JSON.stringify({
             model: MODELO,
             messages: [
-              { role: "system", content: promptSistema },
+              { role: "system", content: PROMPT_SISTEMA },
               ...historicoParaAPI,
             ],
             temperature: 0.1,
-            max_tokens: 700,
-            response_format: { type: "json_object" },
+            max_tokens: 900,
           }),
         },
       );
 
+      console.log("📬 Status da resposta Groq:", resAPI.status);
+
       const dados = await resAPI.json();
-      if (!resAPI.ok) throw new Error(dados.error?.message || "Erro na API");
+      console.log("📦 Dados recebidos:", JSON.stringify(dados).slice(0, 200));
+
+      if (!resAPI.ok)
+        throw new Error(dados.error?.message || `Erro HTTP ${resAPI.status}`);
 
       let conteudo = dados.choices[0]?.message?.content || "";
-      conteudo = conteudo.replace(/```json|```/g, "").trim();
+      console.log("🔍 Resposta bruta da Groq:", conteudo);
 
-      const jsonMatch = conteudo.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : conteudo;
+      conteudo = conteudo
+        .replace(/```json|```/g, "")
+        .replace(/<[^>]+>/g, "")
+        .trim();
 
       let respostaIA: RespostaIA;
       try {
+        const jsonMatch = conteudo.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : conteudo;
         respostaIA = JSON.parse(jsonStr);
       } catch (e) {
-        console.error("JSON parse falhou:", conteudo);
+        console.error("❌ Erro no parse do JSON:", conteudo);
         respostaIA = {
           intent: "query",
           status: "collecting_data",
           data: {},
           missing_fields: [],
-          message: "Não entendi. Pode repetir?",
+          message: "Não entendi direito. Pode repetir de forma mais clara?",
         };
       }
 
-      setCurrentIntent(respostaIA.intent);
-      setCurrentData((prev) => ({ ...prev, ...respostaIA.data }));
-      setCurrentStatus(respostaIA.status);
+      // FIX 6: atualiza refs em vez de estados para que o valor esteja
+      // disponível imediatamente ainda dentro desta função async
+      const mergedData = { ...currentDataRef.current, ...respostaIA.data };
+      currentDataRef.current = mergedData;
+      currentIntentRef.current = respostaIA.intent ?? currentIntentRef.current;
+      currentStatusRef.current = respostaIA.status ?? currentStatusRef.current;
 
       if (respostaIA.message) {
         const textoLimpo = respostaIA.message.replace(/\\n/g, "\n");
@@ -271,8 +389,7 @@ Responda apenas com o JSON.`;
         await salvarMensagem("ia", textoLimpo);
       }
 
-      // Confirmação
-      const confirmacoes = [
+      const CONFIRMACOES = [
         "sim",
         "pode",
         "confirma",
@@ -280,27 +397,40 @@ Responda apenas com o JSON.`;
         "ok",
         "yes",
         "pronto",
+        "vai",
+        "deletar",
+        "arquivar",
       ];
-      const usuarioConfirmou = confirmacoes.some((p) =>
+      const usuarioConfirmou = CONFIRMACOES.some((p) =>
         textoUsuario.toLowerCase().includes(p),
       );
 
-      if (
+      // FIX 7: usa currentStatusRef (valor atualizado) em vez do estado antigo
+      const deveExecutar =
         respostaIA.status === "confirmed" ||
-        (respostaIA.status === "ready_for_confirmation" && usuarioConfirmou)
-      ) {
+        (respostaIA.status === "ready_for_confirmation" && usuarioConfirmou) ||
+        (currentStatusRef.current === "ready_for_confirmation" &&
+          usuarioConfirmou);
+
+      if (deveExecutar) {
         let resultado = "Ação realizada.";
 
-        if (
-          respostaIA.intent === "create_transaction" ||
-          currentIntent === "create_transaction"
-        ) {
-          resultado = await criarTransacao(respostaIA.data || currentData);
-        } else if (
-          respostaIA.intent === "create_account" ||
-          currentIntent === "create_account"
-        ) {
-          resultado = await criarConta(respostaIA.data || currentData);
+        // FIX 8: usa mergedData (já combinado acima) — sem depender de closure
+        switch (currentIntentRef.current) {
+          case "create_transaction":
+            resultado = await criarTransacao(mergedData);
+            break;
+          case "create_account":
+            resultado = await criarConta(mergedData);
+            break;
+          case "delete_transaction":
+            resultado = await deletarTransacao(mergedData);
+            break;
+          case "archive_account":
+            resultado = await arquivarConta(mergedData);
+            break;
+          default:
+            resultado = "Ação concluída.";
         }
 
         const msgSucesso: Mensagem = {
@@ -311,37 +441,43 @@ Responda apenas com o JSON.`;
         setMensagens((prev) => [...prev, msgSucesso]);
         await salvarMensagem("sistema", resultado);
 
-        // Reset
-        setCurrentData({});
-        setCurrentIntent(null);
-        setCurrentStatus("collecting_data");
+        // reseta refs após execução
+        currentDataRef.current = {};
+        currentIntentRef.current = null;
+        currentStatusRef.current = "collecting_data";
       }
     } catch (error: any) {
-      console.error("Erro:", error);
+      console.error("Erro geral:", error);
+      const msgErro = error?.message || "Erro desconhecido";
       setMensagens((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: "ia",
-          texto: "Ocorreu um erro. Tente novamente.",
+          // Mostra o erro real na tela para facilitar o debug no celular
+          texto: `⚠️ Erro: ${msgErro}`,
         },
       ]);
     } finally {
       setCarregando(false);
+      scrollViewRef.current?.scrollToEnd({ animated: true });
     }
   };
 
   const limparChat = async () => {
     await AsyncStorage.removeItem("@historico_chat");
-    await supabase
-      .from("chat_historico")
-      .delete()
-      .eq("user_id", session?.user?.id);
+    if (session?.user?.id) {
+      await supabase
+        .from("chat_historico")
+        .delete()
+        .eq("user_id", session.user.id);
+    }
     setMensagens([
-      { id: "1", role: "ia", texto: "Memória limpa. Como posso ajudar?" },
+      { id: "1", role: "ia", texto: "Chat limpo! Como posso ajudar agora?" },
     ]);
-    setCurrentData({});
-    setCurrentIntent(null);
+    currentDataRef.current = {};
+    currentIntentRef.current = null;
+    currentStatusRef.current = "collecting_data";
   };
 
   return (
@@ -443,11 +579,12 @@ Responda apenas com o JSON.`;
                 borderColor: Cores.borda,
               },
             ]}
-            placeholder="Responda aqui..."
+            placeholder="Digite sua mensagem..."
             placeholderTextColor={Cores.textoSecundario}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={enviarMensagem}
+            multiline
           />
           <TouchableOpacity
             style={[
@@ -488,10 +625,12 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    height: 48,
+    minHeight: 48,
+    maxHeight: 120,
     borderWidth: 1,
     borderRadius: 24,
     paddingHorizontal: 18,
+    paddingVertical: 12,
     fontSize: 16,
   },
   btnEnviar: {
