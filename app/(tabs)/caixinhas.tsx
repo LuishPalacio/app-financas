@@ -25,6 +25,12 @@ interface Caixinha {
   icone: string;
 }
 
+interface Conta {
+  id: number;
+  nome: string;
+  saldo_inicial: number;
+}
+
 const PALETA_CORES = [
   "#2A9D8F",
   "#E9C46A",
@@ -52,6 +58,7 @@ export default function CaixinhasScreen() {
   };
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
+  const [contas, setContas] = useState<Conta[]>([]);
 
   const [modalNovaVisivel, setModalNovaVisivel] = useState(false);
   const [nomeCaixinha, setNomeCaixinha] = useState("");
@@ -66,12 +73,17 @@ export default function CaixinhasScreen() {
   const [tipoMovimento, setTipoMovimento] = useState<"guardar" | "resgatar">(
     "guardar",
   );
+  const [contaMovimentoId, setContaMovimentoId] = useState<number | null>(null);
 
   const carregarDados = async () => {
     if (!session?.user?.id) return;
     try {
-      const { data } = await supabase.from("caixinhas").select("*");
-      if (data) setCaixinhas(data);
+      const [resCaixinhas, resContas] = await Promise.all([
+        supabase.from("caixinhas").select("*"),
+        supabase.from("contas").select("*"),
+      ]);
+      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
+      if (resContas.data) setContas(resContas.data);
     } catch (error) {
       console.error(error);
     }
@@ -138,7 +150,45 @@ export default function CaixinhasScreen() {
     setCaixaSelecionada(caixa);
     setValorMovimento("");
     setTipoMovimento("guardar");
+    setContaMovimentoId(null);
     setModalMovimentoVisivel(true);
+  };
+
+  const executarMovimento = async (valorNum: number, novoSaldo: number) => {
+    if (!caixaSelecionada) return;
+
+    const { error: errorCaixinha } = await supabase
+      .from("caixinhas")
+      .update({ saldo_atual: novoSaldo })
+      .eq("id", caixaSelecionada.id);
+
+    if (errorCaixinha) {
+      return Alert.alert("Erro", "Não foi possível atualizar o saldo.");
+    }
+
+    // Registra a movimentação como transação na conta selecionada
+    const descricao =
+      tipoMovimento === "guardar"
+        ? `Guardar em: ${caixaSelecionada.nome}`
+        : `Resgate de: ${caixaSelecionada.nome}`;
+
+    await supabase.from("transacoes").insert([
+      {
+        tipo: tipoMovimento === "guardar" ? "despesa" : "receita",
+        valor: valorNum,
+        descricao,
+        data_vencimento: new Date().toISOString().split("T")[0],
+        conta_id: contaMovimentoId,
+        categoria_id: null,
+        status: "paga",
+        user_id: session.user.id,
+      },
+    ]);
+
+    setModalMovimentoVisivel(false);
+    setCaixaSelecionada(null);
+    setContaMovimentoId(null);
+    carregarDados();
   };
 
   const confirmarMovimento = async () => {
@@ -146,30 +196,55 @@ export default function CaixinhasScreen() {
     const valorNum = parseFloat(valorMovimento.replace(",", "."));
     if (isNaN(valorNum) || valorNum <= 0)
       return Alert.alert("Aviso", "Valor inválido.");
+    if (!contaMovimentoId)
+      return Alert.alert("Aviso", "Seleciona uma conta para continuar.");
 
-    let novoSaldo = Number(caixaSelecionada.saldo_atual);
-    if (tipoMovimento === "guardar") novoSaldo += valorNum;
-    else {
-      if (valorNum > novoSaldo)
+    let novoSaldoCaixinha = Number(caixaSelecionada.saldo_atual);
+
+    if (tipoMovimento === "guardar") {
+      novoSaldoCaixinha += valorNum;
+
+      // Verificar saldo real da conta selecionada
+      const conta = contas.find((c) => c.id === contaMovimentoId);
+      const { data: transacoesConta } = await supabase
+        .from("transacoes")
+        .select("tipo, valor, status")
+        .eq("conta_id", contaMovimentoId)
+        .eq("status", "paga");
+
+      const receitasConta = (transacoesConta ?? [])
+        .filter((t) => t.tipo === "receita")
+        .reduce((acc, t) => acc + Number(t.valor), 0);
+      const despesasConta = (transacoesConta ?? [])
+        .filter((t) => t.tipo === "despesa")
+        .reduce((acc, t) => acc + Number(t.valor), 0);
+      const saldoRealConta =
+        Number(conta?.saldo_inicial ?? 0) + receitasConta - despesasConta;
+
+      if (valorNum > saldoRealConta) {
+        return Alert.alert(
+          "Saldo insuficiente",
+          `Você não tem saldo suficiente nesta conta (R$ ${saldoRealConta.toFixed(2)}). Deseja continuar mesmo assim? A conta ficará negativa.`,
+          [
+            { text: "Cancelar", style: "cancel" },
+            {
+              text: "Sim, continuar",
+              style: "destructive",
+              onPress: () => executarMovimento(valorNum, novoSaldoCaixinha),
+            },
+          ],
+        );
+      }
+    } else {
+      if (valorNum > novoSaldoCaixinha)
         return Alert.alert(
           "Aviso",
           "Não podes resgatar mais do que tens guardado!",
         );
-      novoSaldo -= valorNum;
+      novoSaldoCaixinha -= valorNum;
     }
 
-    const { error } = await supabase
-      .from("caixinhas")
-      .update({ saldo_atual: novoSaldo })
-      .eq("id", caixaSelecionada.id);
-
-    if (error) {
-      Alert.alert("Erro", "Não foi possível atualizar o saldo.");
-    } else {
-      setModalMovimentoVisivel(false);
-      setCaixaSelecionada(null);
-      carregarDados();
-    }
+    executarMovimento(valorNum, novoSaldoCaixinha);
   };
 
   return (
@@ -452,6 +527,62 @@ export default function CaixinhasScreen() {
               keyboardType="numeric"
             />
 
+            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>
+              {tipoMovimento === "guardar"
+                ? "Saiu de qual conta?"
+                : "Vai entrar em qual conta?"}
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.contaScroll}
+            >
+              {contas.map((conta) => (
+                <TouchableOpacity
+                  key={conta.id}
+                  style={[
+                    styles.contaPill,
+                    {
+                      backgroundColor: Cores.inputFundo,
+                      borderColor: Cores.borda,
+                    },
+                    contaMovimentoId === conta.id && {
+                      borderColor:
+                        tipoMovimento === "guardar" ? "#2A9D8F" : "#E76F51",
+                      borderWidth: 2,
+                    },
+                  ]}
+                  onPress={() => setContaMovimentoId(conta.id)}
+                >
+                  <MaterialIcons
+                    name="account-balance-wallet"
+                    size={14}
+                    color={
+                      contaMovimentoId === conta.id
+                        ? tipoMovimento === "guardar"
+                          ? "#2A9D8F"
+                          : "#E76F51"
+                        : Cores.textoSecundario
+                    }
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.contaPillText,
+                      {
+                        color:
+                          contaMovimentoId === conta.id
+                            ? Cores.textoPrincipal
+                            : Cores.textoSecundario,
+                      },
+                    ]}
+                  >
+                    {conta.nome}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
             <View style={styles.modalButtons}>
               <Button
                 title="Cancelar"
@@ -566,4 +697,15 @@ const styles = StyleSheet.create({
   },
   typeButton: { flex: 1, padding: 12, alignItems: "center" },
   typeButtonText: { fontWeight: "bold" },
+  contaScroll: { flexDirection: "row", marginBottom: 20 },
+  contaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    marginRight: 10,
+    borderWidth: 1,
+  },
+  contaPillText: { fontSize: 14, fontWeight: "500" },
 });

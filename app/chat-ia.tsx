@@ -342,7 +342,7 @@ export default function ChatIA() {
               ...historicoParaAPI,
             ],
             temperature: 0.1,
-            max_tokens: 900,
+            max_tokens: 400,
           }),
         },
       );
