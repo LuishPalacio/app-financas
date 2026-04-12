@@ -18,4 +18,5 @@ Aplicativo de controle financeiro pessoal e compartilhado desenvolvido com **Rea
 O projeto utiliza uma lógica de parcerias baseada em tabelas relacionais, permitindo que um usuário convide outro para visualizar e editar contas selecionadas, mantendo a privacidade dos dados individuais.
 
 ---
-Desenvolvido por **Luis Palacio** (Estudante de Ciência da Computação na Braz Cubas)
+Desenvolvido por **Luis Palacio** e **Gabriel Henrique Alves** (Estudantes de Ciência da Computação na Braz Cubas)
+
