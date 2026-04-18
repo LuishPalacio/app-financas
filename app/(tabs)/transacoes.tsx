@@ -96,8 +96,12 @@ export default function TransacoesScreen() {
     `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
   );
 
-  // Anos: 3 atrás até 2 à frente
-  const anosDisponiveis = Array.from({ length: 6 }, (_, i) => anoAtualNum - 3 + i);
+  const alterarAno = (direcao: number) => {
+    const novoAno = anoSelecionado + direcao;
+    setAnoSelecionado(novoAno);
+    const mesNum = mesSelecionado.split("-")[1];
+    setMesSelecionado(`${novoAno}-${mesNum}`);
+  };
 
   const carregarDados = async () => {
     if (!session?.user?.id) return;
@@ -195,27 +199,15 @@ export default function TransacoesScreen() {
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Extrato</Text>
       </View>
 
-      {/* SELETOR DE ANO */}
-      <View style={styles.anosScrollContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
-          {anosDisponiveis.map((ano) => {
-            const isAtivo = anoSelecionado === ano;
-            return (
-              <TouchableOpacity
-                key={ano}
-                style={[styles.anoPill, { backgroundColor: isAtivo ? "#2A9D8F" : Cores.pillFundo, borderColor: isAtivo ? "#2A9D8F" : Cores.borda }]}
-                onPress={() => {
-                  setAnoSelecionado(ano);
-                  // Mantém o mês atual ao trocar de ano — CORRRIGIDO
-                  const mesNum = mesSelecionado.split("-")[1];
-                  setMesSelecionado(`${ano}-${mesNum}`);
-                }}
-              >
-                <Text style={[styles.anoPillText, { color: isAtivo ? "#FFF" : Cores.textoSecundario }]}>{ano}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+      {/* NAVEGADOR DE ANO */}
+      <View style={[styles.anoNavBar, { backgroundColor: Cores.pillFundo }]}>
+        <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.anoNavBtn}>
+          <MaterialIcons name="chevron-left" size={28} color={Cores.textoPrincipal} />
+        </TouchableOpacity>
+        <Text style={[styles.anoNavText, { color: Cores.textoPrincipal }]}>{anoSelecionado}</Text>
+        <TouchableOpacity onPress={() => alterarAno(1)} style={styles.anoNavBtn}>
+          <MaterialIcons name="chevron-right" size={28} color={Cores.textoPrincipal} />
+        </TouchableOpacity>
       </View>
 
       {/* FILTROS */}
@@ -490,9 +482,9 @@ const styles = StyleSheet.create({
   mainFilterButton: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, paddingHorizontal: 5, borderRadius: 10, marginHorizontal: 4 },
   mainFilterText: { marginLeft: 4, fontSize: 13, fontWeight: "bold" },
 
-  anosScrollContainer: { marginBottom: 8 },
-  anoPill: { paddingHorizontal: 18, paddingVertical: 7, borderRadius: 20, marginRight: 8, borderWidth: 1 },
-  anoPillText: { fontSize: 14, fontWeight: "700" },
+  anoNavBar: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginHorizontal: 15, marginBottom: 8, borderRadius: 12, paddingVertical: 4 },
+  anoNavBtn: { padding: 8 },
+  anoNavText: { fontSize: 18, fontWeight: "bold", minWidth: 60, textAlign: "center" },
 
   mesesScrollContainer: { marginBottom: 12 },
   mesPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginRight: 8, borderWidth: 1 },
