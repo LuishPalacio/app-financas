@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect, useRouter } from "expo-router"; // <-- ADICIONADO O useRouter
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// 1. IMPORTAÇÕES DA NOSSA NOVA ARQUITETURA
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 
@@ -53,6 +52,16 @@ const PALETA_CORES = [
   "#E76F51",
   "#264653",
   "#8AB17D",
+  "#457B9D",
+  "#8A05BE",
+];
+
+const LISTA_ICONES = [
+  "label", "restaurant", "directions-car", "home", "favorite",
+  "shopping-cart", "school", "fitness-center", "local-hospital",
+  "flight", "beach-access", "pets", "work", "sports-esports",
+  "music-note", "local-movies", "attach-money", "savings",
+  "card-giftcard", "build",
 ];
 
 const getEstiloBanco = (nome: string, isDark: boolean) => {
@@ -77,9 +86,91 @@ const getEstiloBanco = (nome: string, isDark: boolean) => {
   };
 };
 
+const mesesEmPortugues = [
+  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+];
+
+// Gráfico de pizza simples usando Views
+const PieChart = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string }[]; total: number; isDark: boolean }) => {
+  const SIZE = 120;
+  const RADIUS = SIZE / 2;
+  if (total === 0) return (
+    <View style={{ alignItems: "center", justifyContent: "center", height: SIZE }}>
+      <Text style={{ color: isDark ? "#666" : "#CCC", fontSize: 12 }}>Sem dados</Text>
+    </View>
+  );
+
+  // Renderiza fatias usando bordas de View rotacionadas (técnica sem SVG)
+  let cumulativeAngle = 0;
+  const fatias = dados.map((item) => {
+    const angle = (item.valor / total) * 360;
+    const result = { ...item, startAngle: cumulativeAngle, angle };
+    cumulativeAngle += angle;
+    return result;
+  });
+
+  return (
+    <View style={{ alignItems: "center" }}>
+      <View style={{ width: SIZE, height: SIZE, borderRadius: RADIUS, overflow: "hidden", position: "relative" }}>
+        {fatias.map((fatia, i) => {
+          return (
+            <View
+              key={i}
+              style={{
+                position: "absolute",
+                width: SIZE,
+                height: SIZE,
+                borderRadius: RADIUS,
+                backgroundColor: fatia.cor,
+                transform: [{ rotate: `${fatia.startAngle}deg` }],
+                // clip usando overflow da fatia via camadas sobrepostas
+              }}
+            />
+          );
+        })}
+        {/* Fundo branco central para efeito donut */}
+        <View style={{
+          position: "absolute",
+          width: SIZE * 0.5,
+          height: SIZE * 0.5,
+          borderRadius: RADIUS * 0.5,
+          backgroundColor: isDark ? "#1E1E1E" : "#FFF",
+          top: SIZE * 0.25,
+          left: SIZE * 0.25,
+          alignItems: "center",
+          justifyContent: "center",
+        }}>
+          <Text style={{ fontSize: 9, fontWeight: "bold", color: isDark ? "#FFF" : "#333" }}>
+            {dados.length} cat.
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// Legenda do gráfico
+const Legenda = ({ dados, total, cores }: { dados: { cor: string; valor: number; nome: string }[]; total: number; cores: any }) => (
+  <View style={{ flex: 1, paddingLeft: 12 }}>
+    {dados.slice(0, 5).map((item, i) => (
+      <View key={i} style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: item.cor, marginRight: 6 }} />
+        <Text style={{ flex: 1, fontSize: 11, color: cores.textoSecundario }} numberOfLines={1}>{item.nome}</Text>
+        <Text style={{ fontSize: 11, fontWeight: "bold", color: cores.textoPrincipal }}>
+          {total > 0 ? `${((item.valor / total) * 100).toFixed(0)}%` : "0%"}
+        </Text>
+      </View>
+    ))}
+    {dados.length > 5 && (
+      <Text style={{ fontSize: 10, color: cores.textoSecundario }}>+{dados.length - 5} outras</Text>
+    )}
+  </View>
+);
+
 export default function Dashboard() {
   const { isDark, session } = useAppTheme();
-  const router = useRouter(); // <-- DECLARAÇÃO DO ROUTER PARA A NAVEGAÇÃO DA IA
+  const router = useRouter();
 
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
@@ -97,8 +188,10 @@ export default function Dashboard() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
 
-  // CONTROLE DO MÊS PARA O FLUXO DE CAIXA
   const [mesAtual, setMesAtual] = useState(new Date());
+  const [mostrarPickerMesAno, setMostrarPickerMesAno] = useState(false);
+  const [anoTemp, setAnoTemp] = useState(new Date().getFullYear());
+  const [mesTemp, setMesTemp] = useState(new Date().getMonth());
 
   const alterarMes = (direcao: number) => {
     const novoMes = new Date(mesAtual);
@@ -106,110 +199,108 @@ export default function Dashboard() {
     setMesAtual(novoMes);
   };
 
-  // CORREÇÃO ANDROID HERMES
-  const mesesEmPortugues = [
-    "Janeiro",
-    "Fevereiro",
-    "Março",
-    "Abril",
-    "Maio",
-    "Junho",
-    "Julho",
-    "Agosto",
-    "Setembro",
-    "Outubro",
-    "Novembro",
-    "Dezembro",
-  ];
-  const nomeDoMes = `${mesesEmPortugues[mesAtual.getMonth()]} de ${mesAtual.getFullYear()}`;
+  const nomeDoMes = `${mesesEmPortugues[mesAtual.getMonth()]} ${mesAtual.getFullYear()}`;
 
+  // --- Modais ---
   const [modalCatVisivel, setModalCatVisivel] = useState(false);
   const [nomeCategoria, setNomeCategoria] = useState("");
   const [corSelecionada, setCorSelecionada] = useState(PALETA_CORES[0]);
-  const [tipoNovaCategoria, setTipoNovaCategoria] = useState<
-    "receita" | "despesa"
-  >("despesa");
+  const [tipoNovaCategoria, setTipoNovaCategoria] = useState<"receita" | "despesa">("despesa");
+  const [iconeSelecionado, setIconeSelecionado] = useState("label");
+
+  const [modalGerenciarCatVisivel, setModalGerenciarCatVisivel] = useState(false);
+  const [catEditando, setCatEditando] = useState<Categoria | null>(null);
+  const [nomeEditCat, setNomeEditCat] = useState("");
+  const [corEditCat, setCorEditCat] = useState(PALETA_CORES[0]);
+  const [iconeEditCat, setIconeEditCat] = useState("label");
 
   const [modalContaVisivel, setModalContaVisivel] = useState(false);
   const [nomeConta, setNomeConta] = useState("");
   const [saldoInicialConta, setSaldoInicialConta] = useState("");
   const [contaCompartilhada, setContaCompartilhada] = useState(false);
 
+  const [modalEditarContaVisivel, setModalEditarContaVisivel] = useState(false);
+  const [contaEditando, setContaEditando] = useState<Conta | null>(null);
+  const [nomeEditConta, setNomeEditConta] = useState("");
+  const [saldoEditConta, setSaldoEditConta] = useState("");
+  const [compartilhadoEditConta, setCompartilhadoEditConta] = useState(false);
+
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
-  const [tipoTransacao, setTipoTransacao] = useState<
-    "receita" | "despesa" | "transferencia"
-  >("despesa");
+  const [tipoTransacao, setTipoTransacao] = useState<"receita" | "despesa" | "transferencia">("despesa");
   const [catSelecionadaId, setCatSelecionadaId] = useState<number | null>(null);
-  const [contaSelecionadaId, setContaSelecionadaId] = useState<number | null>(
-    null,
-  );
+  const [contaSelecionadaId, setContaSelecionadaId] = useState<number | null>(null);
   const [contaDestinoId, setContaDestinoId] = useState<number | null>(null);
-
-  const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">(
-    "unica",
-  );
+  const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">("unica");
   const [numParcelas, setNumParcelas] = useState("2");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
 
-  // --- MATEMÁTICA DO APLICATIVO ---
-  const saldoInicialTotal = contas.reduce(
-    (acc, curr) => acc + curr.saldo_inicial,
-    0,
-  );
+  const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
+
+  // --- Cálculos ---
+  const saldoInicialTotal = contas.reduce((acc, curr) => acc + curr.saldo_inicial, 0);
   const receitasRealizadas = transacoes
     .filter((t) => t.tipo === "receita" && t.status === "paga")
     .reduce((acc, curr) => acc + curr.valor, 0);
   const despesasRealizadas = transacoes
     .filter((t) => t.tipo === "despesa" && t.status === "paga")
     .reduce((acc, curr) => acc + curr.valor, 0);
-  const saldoAtualGlobal =
-    saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
 
   const transacoesDoMes = transacoes.filter((t) => {
     const dataT = new Date(t.data_vencimento);
-    const dataAjustada = new Date(
-      dataT.getTime() + dataT.getTimezoneOffset() * 60000,
-    );
+    const dataAjustada = new Date(dataT.getTime() + dataT.getTimezoneOffset() * 60000);
     return (
       dataAjustada.getMonth() === mesAtual.getMonth() &&
       dataAjustada.getFullYear() === mesAtual.getFullYear()
     );
   });
 
-  const receitasDoMes = transacoesDoMes
-    .filter((t) => t.tipo === "receita")
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasDoMes = transacoesDoMes
-    .filter((t) => t.tipo === "despesa")
-    .reduce((acc, curr) => acc + curr.valor, 0);
+  const receitasDoMes = transacoesDoMes.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasDoMes = transacoesDoMes.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
   const balancoMensal = receitasDoMes - despesasDoMes;
 
-  // --- LÓGICA OFFLINE-FIRST ---
+  // Dados para os gráficos de pizza
+  const dadosDespesasPorCat = categorias
+    .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
+    .map((cat) => {
+      const total = transacoesDoMes
+        .filter((t) => t.tipo === "despesa" && t.categoria_id === cat.id)
+        .reduce((acc, t) => acc + t.valor, 0);
+      return { cor: cat.cor, valor: total, nome: cat.nome };
+    })
+    .filter((d) => d.valor > 0)
+    .sort((a, b) => b.valor - a.valor);
+
+  const dadosReceitasPorCat = categorias
+    .filter((c) => c.tipo === "receita" && c.ativa !== 0)
+    .map((cat) => {
+      const total = transacoesDoMes
+        .filter((t) => t.tipo === "receita" && t.categoria_id === cat.id)
+        .reduce((acc, t) => acc + t.valor, 0);
+      return { cor: cat.cor, valor: total, nome: cat.nome };
+    })
+    .filter((d) => d.valor > 0)
+    .sort((a, b) => b.valor - a.valor);
+
+  // --- Dados ---
   const carregarDados = async () => {
     if (!session?.user?.id) return;
 
     try {
-      const [resCategorias, resContas, resTransacoes, resParceria] =
-        await Promise.all([
-          supabase.from("categorias").select("*"),
-          supabase.from("contas").select("*"),
-          supabase.from("transacoes").select("*"),
-          supabase
-            .from("parcerias")
-            .select("id")
-            .eq("status", "aceito")
-            .or(
-              `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`,
-            ),
-        ]);
+      const [resCategorias, resContas, resTransacoes, resParceria] = await Promise.all([
+        supabase.from("categorias").select("*"),
+        supabase.from("contas").select("*"),
+        supabase.from("transacoes").select("*"),
+        supabase.from("parcerias").select("id").eq("status", "aceito").or(
+          `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
+        ),
+      ]);
 
-      if (resCategorias.error || resContas.error || resTransacoes.error) {
-        throw new Error("Sem conexão");
-      }
+      if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
 
       if (resCategorias.data) setCategorias(resCategorias.data);
       if (resContas.data) setContas(resContas.data);
@@ -218,23 +309,11 @@ export default function Dashboard() {
       const temParc = resParceria.data ? resParceria.data.length > 0 : false;
       setTemParceiro(temParc);
 
-      // SALVA O CACHE LOCAL
-      await AsyncStorage.setItem(
-        "@cache_categorias",
-        JSON.stringify(resCategorias.data ?? []),
-      );
-      await AsyncStorage.setItem(
-        "@cache_contas",
-        JSON.stringify(resContas.data ?? []),
-      );
-      await AsyncStorage.setItem(
-        "@cache_transacoes",
-        JSON.stringify(resTransacoes.data ?? []),
-      );
+      await AsyncStorage.setItem("@cache_categorias", JSON.stringify(resCategorias.data ?? []));
+      await AsyncStorage.setItem("@cache_contas", JSON.stringify(resContas.data ?? []));
+      await AsyncStorage.setItem("@cache_transacoes", JSON.stringify(resTransacoes.data ?? []));
       await AsyncStorage.setItem("@cache_parceiro", JSON.stringify(temParc));
     } catch (error) {
-      console.log("Internet falhou. Carregando dados locais...");
-
       const catCache = await AsyncStorage.getItem("@cache_categorias");
       const conCache = await AsyncStorage.getItem("@cache_contas");
       const transCache = await AsyncStorage.getItem("@cache_transacoes");
@@ -245,68 +324,89 @@ export default function Dashboard() {
       if (transCache) setTransacoes(JSON.parse(transCache));
       if (parcCache) setTemParceiro(JSON.parse(parcCache));
 
-      Alert.alert(
-        "Modo Offline",
-        "Você está sem internet. Mostrando seus últimos dados salvos.",
-      );
+      Alert.alert("Modo Offline", "Você está sem internet. Mostrando seus últimos dados salvos.");
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      carregarDados();
-    }, [session]),
-  );
+  useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
 
   const calcularSaldoConta = (conta: Conta) => {
-    const transDaConta = transacoes.filter(
-      (t) => t.conta_id === conta.id && t.status === "paga",
-    );
-    const rec = transDaConta
-      .filter((t) => t.tipo === "receita")
-      .reduce((acc, curr) => acc + curr.valor, 0);
-    const desp = transDaConta
-      .filter((t) => t.tipo === "despesa")
-      .reduce((acc, curr) => acc + curr.valor, 0);
+    const transDaConta = transacoes.filter((t) => t.conta_id === conta.id && t.status === "paga");
+    const rec = transDaConta.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
+    const desp = transDaConta.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
     return Number(conta.saldo_inicial) + rec - desp;
   };
 
+  // --- Ações de Categoria ---
   const salvarCategoria = async () => {
-    if (nomeCategoria.trim() === "")
-      return Alert.alert("Aviso", "Escreve um nome.");
-    const { error } = await supabase.from("categorias").insert([
-      {
-        nome: nomeCategoria,
-        cor: corSelecionada,
-        icone: "label",
-        tipo: tipoNovaCategoria,
-        ativa: 1,
-        user_id: session.user.id,
-      },
-    ]);
+    if (nomeCategoria.trim() === "") return Alert.alert("Aviso", "Escreve um nome.");
+    const { error } = await supabase.from("categorias").insert([{
+      nome: nomeCategoria, cor: corSelecionada, icone: iconeSelecionado,
+      tipo: tipoNovaCategoria, ativa: 1, user_id: session.user.id,
+    }]);
     if (error) return Alert.alert("Erro", "Falha ao salvar categoria.");
     setNomeCategoria("");
     setTipoNovaCategoria("despesa");
+    setIconeSelecionado("label");
     setModalCatVisivel(false);
     carregarDados();
   };
 
-  const salvarConta = async () => {
-    if (nomeConta.trim() === "")
-      return Alert.alert("Aviso", "Dá um nome à conta.");
-    const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
+  const abrirEditarCategoria = (cat: Categoria) => {
+    setCatEditando(cat);
+    setNomeEditCat(cat.nome);
+    setCorEditCat(cat.cor);
+    setIconeEditCat(cat.icone);
+  };
 
-    const { error } = await supabase.from("contas").insert([
+  const salvarEdicaoCategoria = async () => {
+    if (!catEditando || nomeEditCat.trim() === "") return;
+    const { error } = await supabase.from("categorias").update({
+      nome: nomeEditCat, cor: corEditCat, icone: iconeEditCat,
+    }).eq("id", catEditando.id);
+    if (error) return Alert.alert("Erro", "Falha ao atualizar categoria.");
+    setCatEditando(null);
+    carregarDados();
+  };
+
+  const arquivarCategoria = async (cat: Categoria) => {
+    const novaAtiva = cat.ativa !== 0 ? 0 : 1;
+    const acao = novaAtiva === 0 ? "arquivar" : "reativar";
+    Alert.alert("Confirmar", `Deseja ${acao} a categoria "${cat.nome}"?`, [
+      { text: "Cancelar", style: "cancel" },
       {
-        nome: nomeConta,
-        saldo_inicial: saldoNum,
-        user_id: session.user.id,
-        compartilhado: contaCompartilhada,
+        text: acao.charAt(0).toUpperCase() + acao.slice(1),
+        onPress: async () => {
+          await supabase.from("categorias").update({ ativa: novaAtiva }).eq("id", cat.id);
+          carregarDados();
+        },
       },
     ]);
+  };
 
+  const deletarCategoria = (cat: Categoria) => {
+    Alert.alert("Apagar Categoria", `Tem certeza que deseja apagar "${cat.nome}"? Transações vinculadas perderão a categoria.`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Apagar",
+        style: "destructive",
+        onPress: async () => {
+          await supabase.from("categorias").delete().eq("id", cat.id);
+          if (catEditando?.id === cat.id) setCatEditando(null);
+          carregarDados();
+        },
+      },
+    ]);
+  };
+
+  // --- Ações de Conta ---
+  const salvarConta = async () => {
+    if (nomeConta.trim() === "") return Alert.alert("Aviso", "Dá um nome à conta.");
+    const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
+    const { error } = await supabase.from("contas").insert([{
+      nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada,
+    }]);
     if (error) return Alert.alert("Erro", "Falha ao salvar conta.");
-
     setNomeConta("");
     setSaldoInicialConta("");
     setContaCompartilhada(false);
@@ -314,33 +414,43 @@ export default function Dashboard() {
     carregarDados();
   };
 
-  const deletarConta = (id: number, nome: string) => {
-    Alert.alert(
-      "Eliminar Conta",
-      `Tens a certeza que desejas apagar "${nome}"?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Apagar",
-          style: "destructive",
-          onPress: async () => {
-            const { error } = await supabase
-              .from("contas")
-              .delete()
-              .eq("id", id);
-            if (error)
-              Alert.alert(
-                "Não foi possível",
-                "Apague as transações desta conta primeiro.",
-              );
-            else carregarDados();
-          },
-        },
-      ],
-    );
+  const abrirEditarConta = (conta: Conta) => {
+    setContaEditando(conta);
+    setNomeEditConta(conta.nome);
+    setSaldoEditConta(String(conta.saldo_inicial));
+    setCompartilhadoEditConta(conta.compartilhado);
+    setModalEditarContaVisivel(true);
   };
 
-  const aoMudarData = (event: any, dataEscolhida?: Date) => {
+  const salvarEdicaoConta = async () => {
+    if (!contaEditando || nomeEditConta.trim() === "") return Alert.alert("Aviso", "Nome inválido.");
+    const saldoNum = parseFloat(saldoEditConta.replace(",", ".")) || 0;
+    const { error } = await supabase.from("contas").update({
+      nome: nomeEditConta, saldo_inicial: saldoNum, compartilhado: compartilhadoEditConta,
+    }).eq("id", contaEditando.id);
+    if (error) return Alert.alert("Erro", "Falha ao atualizar conta.");
+    setModalEditarContaVisivel(false);
+    setContaEditando(null);
+    carregarDados();
+  };
+
+  const deletarConta = (id: number, nome: string) => {
+    Alert.alert("Eliminar Conta", `Tens a certeza que desejas apagar "${nome}"?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Apagar",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.from("contas").delete().eq("id", id);
+          if (error) Alert.alert("Não foi possível", "Apague as transações desta conta primeiro.");
+          else { setModalEditarContaVisivel(false); carregarDados(); }
+        },
+      },
+    ]);
+  };
+
+  // --- Transação ---
+  const aoMudarData = (_event: any, dataEscolhida?: Date) => {
     setMostrarCalendario(false);
     if (dataEscolhida) setDataSelecionada(dataEscolhida);
   };
@@ -348,8 +458,7 @@ export default function Dashboard() {
   const formatarDataBR = (data: Date) => {
     const d = String(data.getDate()).padStart(2, "0");
     const m = String(data.getMonth() + 1).padStart(2, "0");
-    const a = data.getFullYear();
-    return `${d}/${m}/${a}`;
+    return `${d}/${m}/${data.getFullYear()}`;
   };
 
   const salvarTransacao = async () => {
@@ -363,8 +472,7 @@ export default function Dashboard() {
 
     if (frequencia === "parcelada") {
       totalRepeticoes = parseInt(numParcelas);
-      if (isNaN(totalRepeticoes) || totalRepeticoes < 2)
-        return Alert.alert("Aviso", "Número de parcelas inválido.");
+      if (isNaN(totalRepeticoes) || totalRepeticoes < 2) return Alert.alert("Aviso", "Número de parcelas inválido.");
       valorFinal = valorNum / totalRepeticoes;
     } else if (frequencia === "fixa") {
       totalRepeticoes = 12;
@@ -374,247 +482,133 @@ export default function Dashboard() {
     const novasTransacoes = [];
 
     for (let i = 0; i < totalRepeticoes; i++) {
-      const dataIteracao = new Date(
-        dataSelecionada.getFullYear(),
-        dataSelecionada.getMonth() + i,
-        dataSelecionada.getDate(),
-      );
+      const dataIteracao = new Date(dataSelecionada.getFullYear(), dataSelecionada.getMonth() + i, dataSelecionada.getDate());
       const dataFormatadaSql = `${dataIteracao.getFullYear()}-${String(dataIteracao.getMonth() + 1).padStart(2, "0")}-${String(dataIteracao.getDate()).padStart(2, "0")}`;
       let descFinal = descTransacao;
-      if (frequencia === "parcelada")
-        descFinal = `${descTransacao} (${i + 1}/${totalRepeticoes})`;
+      if (frequencia === "parcelada") descFinal = `${descTransacao} (${i + 1}/${totalRepeticoes})`;
       if (frequencia === "fixa") descFinal = `${descTransacao} (Fixa)`;
 
       if (tipoTransacao === "transferencia") {
-        if (!contaSelecionadaId || !contaDestinoId)
-          return Alert.alert("Aviso", "Seleciona a origem e destino.");
-        if (contaSelecionadaId === contaDestinoId)
-          return Alert.alert("Aviso", "As contas não podem ser iguais.");
-
-        novasTransacoes.push({
-          tipo: "despesa",
-          valor: valorFinal,
-          data_vencimento: dataFormatadaSql,
-          status: statusBd,
-          descricao: `[Transf.] ${descFinal}`,
-          categoria_id: null,
-          conta_id: contaSelecionadaId,
-          user_id: session.user.id,
-        });
-        novasTransacoes.push({
-          tipo: "receita",
-          valor: valorFinal,
-          data_vencimento: dataFormatadaSql,
-          status: statusBd,
-          descricao: `[Transf.] ${descFinal}`,
-          categoria_id: null,
-          conta_id: contaDestinoId,
-          user_id: session.user.id,
-        });
+        if (!contaSelecionadaId || !contaDestinoId) return Alert.alert("Aviso", "Seleciona a origem e destino.");
+        if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
+        novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+        novasTransacoes.push({ tipo: "receita", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaDestinoId, user_id: session.user.id });
       } else {
-        if (!catSelecionadaId || !contaSelecionadaId)
-          return Alert.alert("Aviso", "Seleciona a conta e categoria.");
-        novasTransacoes.push({
-          tipo: tipoTransacao,
-          valor: valorFinal,
-          data_vencimento: dataFormatadaSql,
-          status: statusBd,
-          descricao: descFinal,
-          categoria_id: catSelecionadaId,
-          conta_id: contaSelecionadaId,
-          user_id: session.user.id,
-        });
+        if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
+        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
       }
     }
 
     const { error } = await supabase.from("transacoes").insert(novasTransacoes);
-    if (error)
-      return Alert.alert("Erro", "Falha ao guardar os registos na nuvem.");
+    if (error) return Alert.alert("Erro", "Falha ao guardar os registos na nuvem.");
 
-    setDescTransacao("");
-    setValorTransacao("");
-    setCatSelecionadaId(null);
-    setContaSelecionadaId(null);
-    setContaDestinoId(null);
-    setFrequencia("unica");
-    setNumParcelas("2");
-    setDataSelecionada(new Date());
-    setFoiPago(true);
+    setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
+    setContaSelecionadaId(null); setContaDestinoId(null); setFrequencia("unica");
+    setNumParcelas("2"); setDataSelecionada(new Date()); setFoiPago(true);
     setModalTransVisivel(false);
     carregarDados();
   };
 
+  const nomeUsuario = session?.user?.user_metadata?.nome_usuario || session?.user?.email?.split("@")[0] || "Usuário";
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
       <ScrollView style={styles.container}>
+        {/* HEADER com botão IA fixo */}
         <View style={styles.header}>
-          <Text style={[styles.greeting, { color: Cores.textoPrincipal }]}>
-            Olá,{" "}
-            {session?.user?.user_metadata?.nome_usuario ||
-              session?.user?.email?.split("@")[0] ||
-              "Usuário"}
-            !
-          </Text>
-          <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
-            O teu painel financeiro na nuvem ☁️
-          </Text>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.actionScroll}
-        >
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.greeting, { color: Cores.textoPrincipal }]}>
+              Olá, {nomeUsuario}!
+            </Text>
+            <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
+              O teu painel financeiro na nuvem ☁️
+            </Text>
+          </View>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#457B9D" }]}
-            onPress={() => setModalContaVisivel(true)}
-          >
-            <Text style={styles.actionButtonText}>+ Conta</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#2A9D8F" }]}
-            onPress={() => setModalCatVisivel(true)}
-          >
-            <Text style={styles.actionButtonText}>+ Categoria</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#E76F51" }]}
-            onPress={() => setModalTransVisivel(true)}
-          >
-            <Text style={styles.actionButtonText}>+ Transação</Text>
-          </TouchableOpacity>
-
-          {/* BOTÃO DA IA QUE LEVA PARA A TELA NOVA */}
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: "#1D3557" }]}
+            style={styles.iaBotaoFixo}
             onPress={() => router.push("/chat-ia")}
           >
-            <Text style={styles.actionButtonText}>✨ Consultor IA</Text>
+            <MaterialIcons name="auto-awesome" size={18} color="#FFF" />
+            <Text style={styles.iaBotaoTexto}>IA</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionScroll}>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#457B9D" }]} onPress={() => setModalContaVisivel(true)}>
+            <Text style={styles.actionButtonText}>+ Conta</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#2A9D8F" }]} onPress={() => setModalCatVisivel(true)}>
+            <Text style={styles.actionButtonText}>+ Categoria</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#8AB17D" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
+            <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#E76F51" }]} onPress={() => setModalTransVisivel(true)}>
+            <Text style={styles.actionButtonText}>+ Transação</Text>
           </TouchableOpacity>
         </ScrollView>
 
-        {/* --- NOVO CARTÃO DE FLUXO DE CAIXA --- */}
+        {/* CARTÃO DE FLUXO DE CAIXA */}
         <View style={styles.balanceCard}>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 20,
-            }}
-          >
-            <TouchableOpacity
-              onPress={() => alterarMes(-1)}
-              style={{
-                padding: 8,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                borderRadius: 20,
-              }}
-            >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.mesBotao}>
               <MaterialIcons name="chevron-left" size={24} color="#FFF" />
             </TouchableOpacity>
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "bold",
-                color: "#FFF",
-                textTransform: "capitalize",
-              }}
-            >
-              {nomeDoMes}
-            </Text>
-            <TouchableOpacity
-              onPress={() => alterarMes(1)}
-              style={{
-                padding: 8,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                borderRadius: 20,
-              }}
-            >
+
+            {/* DATA CLICÁVEL */}
+            <TouchableOpacity onPress={() => {
+              setAnoTemp(mesAtual.getFullYear());
+              setMesTemp(mesAtual.getMonth());
+              setMostrarPickerMesAno(true);
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#FFF", textTransform: "capitalize" }}>
+                  {nomeDoMes}
+                </Text>
+                <MaterialIcons name="arrow-drop-down" size={20} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => alterarMes(1)} style={styles.mesBotao}>
               <MaterialIcons name="chevron-right" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
 
           <Text style={styles.balanceTitle}>Saldo Global (Na Conta)</Text>
-          <Text style={styles.balanceAmount}>
-            R$ {saldoAtualGlobal.toFixed(2)}
-          </Text>
+          <Text style={styles.balanceAmount}>R$ {saldoAtualGlobal.toFixed(2)}</Text>
 
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              marginTop: 20,
-              paddingTop: 15,
-              borderTopWidth: 1,
-              borderTopColor: "#333",
-            }}
-          >
-            <View>
-              <Text style={{ color: "#999", fontSize: 12 }}>
-                Entradas do Mês
-              </Text>
-              <Text
-                style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 16 }}
-              >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: "#333" }}>
+            <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
+              <Text style={{ color: "#999", fontSize: 12 }}>Entradas do Mês</Text>
+              <Text style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 16 }}>
                 + R$ {receitasDoMes.toFixed(2)}
               </Text>
-            </View>
-            <View>
-              <Text style={{ color: "#999", fontSize: 12, textAlign: "right" }}>
-                Saídas do Mês
-              </Text>
-              <Text
-                style={{
-                  color: "#E76F51",
-                  fontWeight: "bold",
-                  fontSize: 16,
-                  textAlign: "right",
-                }}
-              >
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
+              <Text style={{ color: "#999", fontSize: 12, textAlign: "right" }}>Saídas do Mês</Text>
+              <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 16, textAlign: "right" }}>
                 - R$ {despesasDoMes.toFixed(2)}
               </Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
-          <View
-            style={{
-              marginTop: 15,
-              alignItems: "center",
-              backgroundColor: "rgba(255,255,255,0.05)",
-              padding: 10,
-              borderRadius: 8,
-            }}
-          >
+          <View style={{ marginTop: 15, alignItems: "center", backgroundColor: "rgba(255,255,255,0.05)", padding: 10, borderRadius: 8 }}>
             <Text style={{ color: "#999", fontSize: 12 }}>Balanço do Mês</Text>
-            <Text
-              style={{
-                color: balancoMensal >= 0 ? "#8AB17D" : "#E76F51",
-                fontWeight: "bold",
-                fontSize: 20,
-              }}
-            >
+            <Text style={{ color: balancoMensal >= 0 ? "#8AB17D" : "#E76F51", fontWeight: "bold", fontSize: 20 }}>
               R$ {balancoMensal.toFixed(2)}
             </Text>
           </View>
         </View>
 
+        {/* CONTAS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text
-              style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}
-            >
-              As Minhas Contas
-            </Text>
-            <Text style={[styles.hintText, { color: Cores.textoSecundario }]}>
-              (Segura para apagar)
-            </Text>
+            <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}>As Minhas Contas</Text>
+            <Text style={[styles.hintText, { color: Cores.textoSecundario }]}>(Segura para editar)</Text>
           </View>
 
           {contas.length === 0 ? (
-            <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>
-              Ainda não registaste nenhuma conta.
-            </Text>
+            <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não registaste nenhuma conta.</Text>
           ) : (
             <View style={styles.accountsGrid}>
               {contas.map((conta) => {
@@ -622,48 +616,19 @@ export default function Dashboard() {
                 return (
                   <TouchableOpacity
                     key={conta.id}
-                    style={[
-                      styles.accountCard,
-                      {
-                        backgroundColor: estilo.bg,
-                        borderColor: isDark ? Cores.borda : estilo.bg,
-                        borderWidth: isDark ? 1 : 0,
-                      },
-                    ]}
-                    onLongPress={() => deletarConta(conta.id, conta.nome)}
+                    style={[styles.accountCard, { backgroundColor: estilo.bg, borderColor: isDark ? Cores.borda : estilo.bg, borderWidth: isDark ? 1 : 0 }]}
+                    onLongPress={() => abrirEditarConta(conta)}
                     activeOpacity={0.8}
                   >
-                    <View
-                      style={{ flexDirection: "row", alignItems: "center" }}
-                    >
-                      <Text
-                        style={[styles.accountName, { color: estilo.text }]}
-                      >
-                        {conta.nome}
-                      </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Text style={[styles.accountName, { color: estilo.text }]}>{conta.nome}</Text>
                       {conta.compartilhado && (
-                        <View
-                          style={{
-                            marginLeft: 8,
-                            backgroundColor: "rgba(255,255,255,0.2)",
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderRadius: 10,
-                            flexDirection: "row",
-                            alignItems: "center",
-                          }}
-                        >
-                          <MaterialIcons
-                            name="people"
-                            size={14}
-                            color={estilo.text}
-                          />
+                        <View style={{ marginLeft: 8, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }}>
+                          <MaterialIcons name="people" size={14} color={estilo.text} />
                         </View>
                       )}
                     </View>
-                    <Text
-                      style={[styles.accountBalance, { color: estilo.text }]}
-                    >
+                    <Text style={[styles.accountBalance, { color: estilo.text }]}>
                       R$ {calcularSaldoConta(conta).toFixed(2)}
                     </Text>
                   </TouchableOpacity>
@@ -672,79 +637,170 @@ export default function Dashboard() {
             </View>
           )}
         </View>
+
+        {/* GRÁFICOS DE PIZZA */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal, marginBottom: 15 }]}>
+            Distribuição do Mês
+          </Text>
+
+          {/* Despesas por categoria */}
+          <View style={[styles.graficoCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#E76F51", marginRight: 8 }} />
+              <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Despesas por Categoria</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <PieChart dados={dadosDespesasPorCat} total={despesasDoMes} isDark={isDark} />
+              <Legenda dados={dadosDespesasPorCat} total={despesasDoMes} cores={Cores} />
+            </View>
+            {despesasDoMes > 0 && (
+              <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
+                Total: R$ {despesasDoMes.toFixed(2)}
+              </Text>
+            )}
+          </View>
+
+          {/* Receitas por categoria */}
+          <View style={[styles.graficoCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#8AB17D", marginRight: 8 }} />
+              <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Receitas por Categoria</Text>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <PieChart dados={dadosReceitasPorCat} total={receitasDoMes} isDark={isDark} />
+              <Legenda dados={dadosReceitasPorCat} total={receitasDoMes} cores={Cores} />
+            </View>
+            {receitasDoMes > 0 && (
+              <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
+                Total: R$ {receitasDoMes.toFixed(2)}
+              </Text>
+            )}
+          </View>
+        </View>
+
       </ScrollView>
 
-      {/* MODAL DA CONTA */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalContaVisivel}
-        onRequestClose={() => setModalContaVisivel(false)}
-      >
+      {/* MODAL PICKER MÊS/ANO */}
+      <Modal animationType="fade" transparent visible={mostrarPickerMesAno} onRequestClose={() => setMostrarPickerMesAno(false)}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}
-          >
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>
-              Nova Conta
-            </Text>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "85%" }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Selecionar Mês e Ano</Text>
+
+            {/* Seletor de Ano */}
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <TouchableOpacity onPress={() => setAnoTemp((a) => a - 1)} style={styles.mesBotaoModal}>
+                <MaterialIcons name="chevron-left" size={24} color={Cores.textoPrincipal} />
+              </TouchableOpacity>
+              <Text style={{ fontSize: 20, fontWeight: "bold", color: Cores.textoPrincipal }}>{anoTemp}</Text>
+              <TouchableOpacity onPress={() => setAnoTemp((a) => a + 1)} style={styles.mesBotaoModal}>
+                <MaterialIcons name="chevron-right" size={24} color={Cores.textoPrincipal} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Grade de Meses */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 }}>
+              {mesesEmPortugues.map((mes, idx) => {
+                const ativo = idx === mesTemp;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.mesItem, { backgroundColor: ativo ? "#2A9D8F" : Cores.pillFundo }]}
+                    onPress={() => setMesTemp(idx)}
+                  >
+                    <Text style={{ color: ativo ? "#FFF" : Cores.textoSecundario, fontSize: 12, fontWeight: "600" }}>
+                      {mes.substring(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <Button title="Cancelar" color="#999" onPress={() => setMostrarPickerMesAno(false)} />
+              <Button title="Confirmar" color="#2A9D8F" onPress={() => {
+                const novaData = new Date(anoTemp, mesTemp, 1);
+                setMesAtual(novaData);
+                setMostrarPickerMesAno(false);
+              }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL EDITAR CONTA */}
+      <Modal animationType="slide" transparent visible={modalEditarContaVisivel} onRequestClose={() => setModalEditarContaVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Editar Conta</Text>
 
             {temParceiro && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 15,
-                  padding: 10,
-                  backgroundColor: Cores.pillFundo,
-                  borderRadius: 8,
-                }}
-              >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <MaterialIcons
-                    name="people"
-                    size={20}
-                    color="#E76F51"
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text
-                    style={{ color: Cores.textoPrincipal, fontWeight: "500" }}
-                  >
-                    Conta Conjunta?
-                  </Text>
+                  <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
+                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Conta Conjunta?</Text>
                 </View>
-                <Switch
-                  value={contaCompartilhada}
-                  onValueChange={setContaCompartilhada}
-                  trackColor={{ false: "#767577", true: "#E76F51" }}
-                />
+                <Switch value={compartilhadoEditConta} onValueChange={setCompartilhadoEditConta} trackColor={{ false: "#767577", true: "#E76F51" }} />
               </View>
             )}
 
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: Cores.inputFundo,
-                  borderColor: Cores.borda,
-                  color: Cores.textoPrincipal,
-                },
-              ]}
+              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+              placeholder="Nome da conta"
+              placeholderTextColor={Cores.textoSecundario}
+              value={nomeEditConta}
+              onChangeText={setNomeEditConta}
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+              placeholder="Saldo Inicial"
+              placeholderTextColor={Cores.textoSecundario}
+              value={saldoEditConta}
+              onChangeText={setSaldoEditConta}
+              keyboardType="numeric"
+            />
+
+            <TouchableOpacity
+              style={[styles.botaoApagar, { marginBottom: 15 }]}
+              onPress={() => contaEditando && deletarConta(contaEditando.id, contaEditando.nome)}
+            >
+              <MaterialIcons name="delete-outline" size={18} color="#FFF" />
+              <Text style={styles.botaoApagarTexto}>Apagar Conta</Text>
+            </TouchableOpacity>
+
+            <View style={styles.modalButtons}>
+              <Button title="Cancelar" color="#999" onPress={() => setModalEditarContaVisivel(false)} />
+              <Button title="Salvar" color="#457B9D" onPress={salvarEdicaoConta} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL NOVA CONTA */}
+      <Modal animationType="slide" transparent visible={modalContaVisivel} onRequestClose={() => setModalContaVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Conta</Text>
+
+            {temParceiro && (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
+                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Conta Conjunta?</Text>
+                </View>
+                <Switch value={contaCompartilhada} onValueChange={setContaCompartilhada} trackColor={{ false: "#767577", true: "#E76F51" }} />
+              </View>
+            )}
+
+            <TextInput
+              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
               placeholder="Nome (ex: Itaú Casa, Carteira)"
               placeholderTextColor={Cores.textoSecundario}
               value={nomeConta}
               onChangeText={setNomeConta}
             />
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: Cores.inputFundo,
-                  borderColor: Cores.borda,
-                  color: Cores.textoPrincipal,
-                },
-              ]}
+              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
               placeholder="Saldo Inicial (ex: 100.00)"
               placeholderTextColor={Cores.textoSecundario}
               value={saldoInicialConta}
@@ -752,572 +808,295 @@ export default function Dashboard() {
               keyboardType="numeric"
             />
             <View style={styles.modalButtons}>
-              <Button
-                title="Cancelar"
-                color="#999"
-                onPress={() => setModalContaVisivel(false)}
-              />
+              <Button title="Cancelar" color="#999" onPress={() => setModalContaVisivel(false)} />
               <Button title="Guardar" color="#457B9D" onPress={salvarConta} />
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL DA CATEGORIA */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalCatVisivel}
-        onRequestClose={() => setModalCatVisivel(false)}
-      >
+      {/* MODAL GERENCIAR CATEGORIAS */}
+      <Modal animationType="slide" transparent visible={modalGerenciarCatVisivel} onRequestClose={() => { setModalGerenciarCatVisivel(false); setCatEditando(null); }}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}
-          >
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>
-              Criar Categoria
-            </Text>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "85%" }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Gerenciar Categorias</Text>
+
+            {catEditando ? (
+              // Tela de edição de categoria específica
+              <ScrollView>
+                <Text style={[styles.colorLabel, { color: Cores.textoSecundario, marginBottom: 5 }]}>Editando: {catEditando.nome}</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                  placeholder="Nome da categoria"
+                  placeholderTextColor={Cores.textoSecundario}
+                  value={nomeEditCat}
+                  onChangeText={setNomeEditCat}
+                />
+                <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
+                <View style={styles.colorPalette}>
+                  {PALETA_CORES.map((cor) => (
+                    <TouchableOpacity
+                      key={cor}
+                      style={[styles.colorOption, { backgroundColor: cor }, corEditCat === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
+                      onPress={() => setCorEditCat(cor)}
+                    />
+                  ))}
+                </View>
+                <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+                  {LISTA_ICONES.map((icone) => (
+                    <TouchableOpacity
+                      key={icone}
+                      style={[styles.iconeOpcao, { backgroundColor: iconeEditCat === icone ? catEditando.cor : Cores.pillFundo }]}
+                      onPress={() => setIconeEditCat(icone)}
+                    >
+                      <MaterialIcons name={icone as any} size={20} color={iconeEditCat === icone ? "#FFF" : Cores.textoSecundario} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TouchableOpacity style={[styles.botaoApagar, { marginBottom: 15 }]} onPress={() => deletarCategoria(catEditando)}>
+                  <MaterialIcons name="delete-outline" size={16} color="#FFF" />
+                  <Text style={styles.botaoApagarTexto}>Apagar Categoria</Text>
+                </TouchableOpacity>
+                <View style={styles.modalButtons}>
+                  <Button title="Voltar" color="#999" onPress={() => setCatEditando(null)} />
+                  <Button title="Salvar" color="#2A9D8F" onPress={salvarEdicaoCategoria} />
+                </View>
+              </ScrollView>
+            ) : (
+              // Lista de categorias
+              <ScrollView>
+                {["despesa", "receita"].map((tipo) => (
+                  <View key={tipo}>
+                    <Text style={[styles.colorLabel, { color: Cores.textoSecundario, textTransform: "uppercase", letterSpacing: 1 }]}>
+                      {tipo === "despesa" ? "Despesas" : "Receitas"}
+                    </Text>
+                    {categorias.filter((c) => c.tipo === tipo).map((cat) => (
+                      <View key={cat.id} style={[styles.catGerenciarRow, { backgroundColor: Cores.pillFundo }]}>
+                        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: cat.cor, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
+                            <MaterialIcons name={cat.icone as any} size={16} color="#FFF" />
+                          </View>
+                          <Text style={{ color: cat.ativa !== 0 ? Cores.textoPrincipal : Cores.textoSecundario, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                            {cat.nome}
+                          </Text>
+                          {cat.ativa === 0 && (
+                            <View style={{ backgroundColor: "#555", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginRight: 8 }}>
+                              <Text style={{ color: "#CCC", fontSize: 10 }}>Arquivada</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <TouchableOpacity onPress={() => abrirEditarCategoria(cat)} style={styles.iconeBotao}>
+                            <MaterialIcons name="edit" size={18} color="#457B9D" />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={styles.iconeBotao}>
+                            <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                    {categorias.filter((c) => c.tipo === tipo).length === 0 && (
+                      <Text style={{ color: Cores.textoSecundario, fontStyle: "italic", marginBottom: 10, fontSize: 13 }}>Nenhuma categoria.</Text>
+                    )}
+                  </View>
+                ))}
+                <View style={{ marginTop: 10 }}>
+                  <Button title="Fechar" color="#999" onPress={() => setModalGerenciarCatVisivel(false)} />
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL NOVA CATEGORIA */}
+      <Modal animationType="slide" transparent visible={modalCatVisivel} onRequestClose={() => setModalCatVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Criar Categoria</Text>
             <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  tipoNovaCategoria === "despesa" && styles.expenseSelected,
-                ]}
-                onPress={() => setTipoNovaCategoria("despesa")}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    tipoNovaCategoria === "despesa"
-                      ? { color: "#FFF" }
-                      : { color: Cores.textoSecundario },
-                  ]}
-                >
-                  Despesas
-                </Text>
+              <TouchableOpacity style={[styles.typeButton, tipoNovaCategoria === "despesa" && styles.expenseSelected]} onPress={() => setTipoNovaCategoria("despesa")}>
+                <Text style={[styles.typeButtonText, tipoNovaCategoria === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesas</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  tipoNovaCategoria === "receita" && styles.incomeSelected,
-                ]}
-                onPress={() => setTipoNovaCategoria("receita")}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    tipoNovaCategoria === "receita"
-                      ? { color: "#FFF" }
-                      : { color: Cores.textoSecundario },
-                  ]}
-                >
-                  Receitas
-                </Text>
+              <TouchableOpacity style={[styles.typeButton, tipoNovaCategoria === "receita" && styles.incomeSelected]} onPress={() => setTipoNovaCategoria("receita")}>
+                <Text style={[styles.typeButtonText, tipoNovaCategoria === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receitas</Text>
               </TouchableOpacity>
             </View>
             <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: Cores.inputFundo,
-                  borderColor: Cores.borda,
-                  color: Cores.textoPrincipal,
-                },
-              ]}
+              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
               placeholder="Nome (ex: Lazer, Vendas)"
               placeholderTextColor={Cores.textoSecundario}
               value={nomeCategoria}
               onChangeText={setNomeCategoria}
             />
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>
-              Escolha uma cor:
-            </Text>
+            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
             <View style={styles.colorPalette}>
               {PALETA_CORES.map((cor) => (
-                <TouchableOpacity
-                  key={cor}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: cor },
-                    corSelecionada === cor && {
-                      borderWidth: 3,
-                      borderColor: Cores.textoPrincipal,
-                    },
-                  ]}
-                  onPress={() => setCorSelecionada(cor)}
-                />
+                <TouchableOpacity key={cor} style={[styles.colorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setCorSelecionada(cor)} />
               ))}
             </View>
+            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+              {LISTA_ICONES.map((icone) => (
+                <TouchableOpacity
+                  key={icone}
+                  style={[styles.iconeOpcao, { backgroundColor: iconeSelecionado === icone ? corSelecionada : Cores.pillFundo, marginRight: 8 }]}
+                  onPress={() => setIconeSelecionado(icone)}
+                >
+                  <MaterialIcons name={icone as any} size={20} color={iconeSelecionado === icone ? "#FFF" : Cores.textoSecundario} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
             <View style={styles.modalButtons}>
-              <Button
-                title="Cancelar"
-                color="#999"
-                onPress={() => setModalCatVisivel(false)}
-              />
-              <Button
-                title="Guardar"
-                color="#2A9D8F"
-                onPress={salvarCategoria}
-              />
+              <Button title="Cancelar" color="#999" onPress={() => setModalCatVisivel(false)} />
+              <Button title="Guardar" color="#2A9D8F" onPress={salvarCategoria} />
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* MODAL DA TRANSAÇÃO */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalTransVisivel}
-        onRequestClose={() => setModalTransVisivel(false)}
-      >
+      {/* MODAL RESUMO DO MÊS */}
+      <Modal animationType="slide" transparent visible={modalResumoVisivel} onRequestClose={() => setModalResumoVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "80%" }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>
+              {nomeDoMes} — Resumo
+            </Text>
+            <ScrollView>
+              {["receita", "despesa"].map((tipo) => {
+                const dadosCat = tipo === "receita" ? dadosReceitasPorCat : dadosDespesasPorCat;
+                const totalTipo = tipo === "receita" ? receitasDoMes : despesasDoMes;
+                const corTipo = tipo === "receita" ? "#8AB17D" : "#E76F51";
+                return (
+                  <View key={tipo} style={{ marginBottom: 20 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
+                      <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 15, textTransform: "uppercase" }}>
+                        {tipo === "receita" ? "Receitas" : "Despesas"}
+                      </Text>
+                      <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 15 }}>
+                        R$ {totalTipo.toFixed(2)}
+                      </Text>
+                    </View>
+                    {dadosCat.length === 0 ? (
+                      <Text style={{ color: Cores.textoSecundario, fontStyle: "italic", fontSize: 13 }}>Sem registros.</Text>
+                    ) : (
+                      dadosCat.map((item, i) => (
+                        <View key={i} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: item.cor, marginRight: 10 }} />
+                            <Text style={{ color: Cores.textoPrincipal, fontWeight: "500", flex: 1 }} numberOfLines={1}>{item.nome}</Text>
+                          </View>
+                          <View style={{ alignItems: "flex-end" }}>
+                            <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 13 }}>R$ {item.valor.toFixed(2)}</Text>
+                            <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>
+                              {totalTipo > 0 ? `${((item.valor / totalTipo) * 100).toFixed(1)}%` : "0%"}
+                            </Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <Button title="Fechar" color="#999" onPress={() => setModalResumoVisivel(false)} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL NOVA TRANSAÇÃO */}
+      <Modal animationType="slide" transparent visible={modalTransVisivel} onRequestClose={() => setModalTransVisivel(false)}>
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={styles.scrollModalContent}>
-            <View
-              style={[
-                styles.modalContent,
-                { backgroundColor: Cores.cardFundo },
-              ]}
-            >
-              <Text
-                style={[styles.modalTitle, { color: Cores.textoPrincipal }]}
-              >
-                Nova Transação
-              </Text>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Transação</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.typeButton,
-                    tipoTransacao === "despesa" && styles.expenseSelected,
-                  ]}
-                  onPress={() => {
-                    setTipoTransacao("despesa");
-                    setCatSelecionadaId(null);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.typeButtonText,
-                      tipoTransacao === "despesa"
-                        ? { color: "#FFF" }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Despesa
-                  </Text>
+                <TouchableOpacity style={[styles.typeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>
+                  <Text style={[styles.typeButtonText, tipoTransacao === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesa</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.typeButton,
-                    tipoTransacao === "receita" && styles.incomeSelected,
-                  ]}
-                  onPress={() => {
-                    setTipoTransacao("receita");
-                    setCatSelecionadaId(null);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.typeButtonText,
-                      tipoTransacao === "receita"
-                        ? { color: "#FFF" }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Receita
-                  </Text>
+                <TouchableOpacity style={[styles.typeButton, tipoTransacao === "receita" && styles.incomeSelected]} onPress={() => { setTipoTransacao("receita"); setCatSelecionadaId(null); }}>
+                  <Text style={[styles.typeButtonText, tipoTransacao === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receita</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.typeButton,
-                    tipoTransacao === "transferencia" &&
-                      styles.transferSelected,
-                  ]}
-                  onPress={() => setTipoTransacao("transferencia")}
-                >
-                  <Text
-                    style={[
-                      styles.typeButtonText,
-                      tipoTransacao === "transferencia"
-                        ? { color: "#FFF" }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Transf.
-                  </Text>
+                <TouchableOpacity style={[styles.typeButton, tipoTransacao === "transferencia" && styles.transferSelected]} onPress={() => setTipoTransacao("transferencia")}>
+                  <Text style={[styles.typeButtonText, tipoTransacao === "transferencia" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Transf.</Text>
                 </TouchableOpacity>
               </View>
 
-              <Text
-                style={[styles.colorLabel, { color: Cores.textoSecundario }]}
-              >
-                Status:
-              </Text>
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.freqButton,
-                    { backgroundColor: Cores.pillFundo },
-                    foiPago && {
-                      backgroundColor: Cores.pillAtivo,
-                      borderBottomWidth: 3,
-                      borderColor: Cores.textoPrincipal,
-                    },
-                  ]}
-                  onPress={() => setFoiPago(true)}
-                >
-                  <Text
-                    style={[
-                      styles.freqButtonText,
-                      foiPago
-                        ? { color: Cores.textoPrincipal }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    {tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}
-                  </Text>
+                <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
+                  <Text style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.freqButton,
-                    { backgroundColor: Cores.pillFundo },
-                    !foiPago && {
-                      backgroundColor: Cores.pillAtivo,
-                      borderBottomWidth: 3,
-                      borderColor: Cores.textoPrincipal,
-                    },
-                  ]}
-                  onPress={() => setFoiPago(false)}
-                >
-                  <Text
-                    style={[
-                      styles.freqButtonText,
-                      !foiPago
-                        ? { color: Cores.textoPrincipal }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    {tipoTransacao === "receita" ? "A Receber" : "A Pagar"}
-                  </Text>
+                <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
+                  <Text style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
                 </TouchableOpacity>
               </View>
 
-              <Text
-                style={[styles.colorLabel, { color: Cores.textoSecundario }]}
-              >
-                Repetição:
-              </Text>
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Repetição:</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.freqButton,
-                    { backgroundColor: Cores.pillFundo },
-                    frequencia === "unica" && {
-                      backgroundColor: Cores.pillAtivo,
-                      borderBottomWidth: 3,
-                      borderColor: Cores.textoPrincipal,
-                    },
-                  ]}
-                  onPress={() => setFrequencia("unica")}
-                >
-                  <Text
-                    style={[
-                      styles.freqButtonText,
-                      frequencia === "unica"
-                        ? { color: Cores.textoPrincipal }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Única
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.freqButton,
-                    { backgroundColor: Cores.pillFundo },
-                    frequencia === "parcelada" && {
-                      backgroundColor: Cores.pillAtivo,
-                      borderBottomWidth: 3,
-                      borderColor: Cores.textoPrincipal,
-                    },
-                  ]}
-                  onPress={() => setFrequencia("parcelada")}
-                >
-                  <Text
-                    style={[
-                      styles.freqButtonText,
-                      frequencia === "parcelada"
-                        ? { color: Cores.textoPrincipal }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Parcelada
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.freqButton,
-                    { backgroundColor: Cores.pillFundo },
-                    frequencia === "fixa" && {
-                      backgroundColor: Cores.pillAtivo,
-                      borderBottomWidth: 3,
-                      borderColor: Cores.textoPrincipal,
-                    },
-                  ]}
-                  onPress={() => setFrequencia("fixa")}
-                >
-                  <Text
-                    style={[
-                      styles.freqButtonText,
-                      frequencia === "fixa"
-                        ? { color: Cores.textoPrincipal }
-                        : { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Fixa Mensal
-                  </Text>
-                </TouchableOpacity>
+                {(["unica", "parcelada", "fixa"] as const).map((freq) => (
+                  <TouchableOpacity key={freq} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequencia === freq && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFrequencia(freq)}>
+                    <Text style={[styles.freqButtonText, frequencia === freq ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>
+                      {freq === "unica" ? "Única" : freq === "parcelada" ? "Parcelada" : "Fixa Mensal"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: Cores.inputFundo,
-                    borderColor: Cores.borda,
-                    color: Cores.textoPrincipal,
-                  },
-                ]}
-                placeholder="Descrição"
-                placeholderTextColor={Cores.textoSecundario}
-                value={descTransacao}
-                onChangeText={setDescTransacao}
-              />
+              <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
 
               <View style={styles.rowInputs}>
-                <TouchableOpacity
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: Cores.pillFundo,
-                      borderColor: Cores.borda,
-                      flex: 1,
-                      marginRight: 10,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    },
-                  ]}
-                  onPress={() => setMostrarCalendario(true)}
-                >
-                  <MaterialIcons
-                    name="calendar-today"
-                    size={20}
-                    color={Cores.textoSecundario}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text
-                    style={[
-                      styles.datePickerText,
-                      { color: Cores.textoPrincipal },
-                    ]}
-                  >
-                    {formatarDataBR(dataSelecionada)}
-                  </Text>
+                <TouchableOpacity style={[styles.input, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda, flex: 1, marginRight: 10, flexDirection: "row", alignItems: "center", justifyContent: "center" }]} onPress={() => setMostrarCalendario(true)}>
+                  <MaterialIcons name="calendar-today" size={20} color={Cores.textoSecundario} style={{ marginRight: 8 }} />
+                  <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
                 </TouchableOpacity>
-                {mostrarCalendario && (
-                  <DateTimePicker
-                    value={dataSelecionada}
-                    mode="date"
-                    display="default"
-                    onChange={aoMudarData}
-                  />
-                )}
-
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: Cores.inputFundo,
-                      borderColor: Cores.borda,
-                      color: Cores.textoPrincipal,
-                      flex: 1,
-                      marginRight: frequencia === "parcelada" ? 10 : 0,
-                    },
-                  ]}
-                  placeholder={
-                    frequencia === "parcelada"
-                      ? "Valor Total"
-                      : "Valor (Ex: 50)"
-                  }
-                  placeholderTextColor={Cores.textoSecundario}
-                  value={valorTransacao}
-                  onChangeText={setValorTransacao}
-                  keyboardType="numeric"
-                />
+                {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
+                <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]} placeholder={frequencia === "parcelada" ? "Valor Total" : "Valor (Ex: 50)"} placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="numeric" />
                 {frequencia === "parcelada" && (
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: Cores.inputFundo,
-                        borderColor: Cores.borda,
-                        color: Cores.textoPrincipal,
-                        width: 80,
-                      },
-                    ]}
-                    placeholder="Vezes"
-                    placeholderTextColor={Cores.textoSecundario}
-                    value={numParcelas}
-                    onChangeText={setNumParcelas}
-                    keyboardType="numeric"
-                  />
+                  <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, width: 80 }]} placeholder="Vezes" placeholderTextColor={Cores.textoSecundario} value={numParcelas} onChangeText={setNumParcelas} keyboardType="numeric" />
                 )}
               </View>
 
-              <Text
-                style={[styles.colorLabel, { color: Cores.textoSecundario }]}
-              >
-                {tipoTransacao === "transferencia"
-                  ? "Conta de Origem (Sai):"
-                  : "Qual Conta?"}
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.catScroll}
-              >
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de Origem (Sai):" : "Qual Conta?"}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
                 {contas.map((conta) => (
-                  <TouchableOpacity
-                    key={conta.id}
-                    style={[
-                      styles.catPill,
-                      { backgroundColor: Cores.pillFundo },
-                      contaSelecionadaId === conta.id && {
-                        borderColor: "#457B9D",
-                        borderWidth: 2,
-                      },
-                    ]}
-                    onPress={() => setContaSelecionadaId(conta.id)}
-                  >
-                    <MaterialIcons
-                      name="account-balance-wallet"
-                      size={16}
-                      color={
-                        contaSelecionadaId === conta.id
-                          ? "#457B9D"
-                          : Cores.textoSecundario
-                      }
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text style={{ color: Cores.textoPrincipal }}>
-                      {conta.nome}
-                    </Text>
+                  <TouchableOpacity key={conta.id} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, contaSelecionadaId === conta.id && { borderColor: "#457B9D", borderWidth: 2 }]} onPress={() => setContaSelecionadaId(conta.id)}>
+                    <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? "#457B9D" : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                    <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
 
               {tipoTransacao === "transferencia" ? (
                 <>
-                  <Text
-                    style={[
-                      styles.colorLabel,
-                      { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Conta de Destino (Entra):
-                  </Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.catScroll}
-                  >
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Conta de Destino (Entra):</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
                     {contas.map((conta) => (
-                      <TouchableOpacity
-                        key={`dest-${conta.id}`}
-                        style={[
-                          styles.catPill,
-                          { backgroundColor: Cores.pillFundo },
-                          contaDestinoId === conta.id && {
-                            borderColor: "#2A9D8F",
-                            borderWidth: 2,
-                          },
-                        ]}
-                        onPress={() => setContaDestinoId(conta.id)}
-                      >
-                        <MaterialIcons
-                          name="account-balance-wallet"
-                          size={16}
-                          color={
-                            contaDestinoId === conta.id
-                              ? "#2A9D8F"
-                              : Cores.textoSecundario
-                          }
-                          style={{ marginRight: 6 }}
-                        />
-                        <Text style={{ color: Cores.textoPrincipal }}>
-                          {conta.nome}
-                        </Text>
+                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, contaDestinoId === conta.id && { borderColor: "#2A9D8F", borderWidth: 2 }]} onPress={() => setContaDestinoId(conta.id)}>
+                        <MaterialIcons name="account-balance-wallet" size={16} color={contaDestinoId === conta.id ? "#2A9D8F" : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                        <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
                 </>
               ) : (
                 <>
-                  <Text
-                    style={[
-                      styles.colorLabel,
-                      { color: Cores.textoSecundario },
-                    ]}
-                  >
-                    Categoria:
-                  </Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.catScroll}
-                  >
-                    {categorias
-                      .filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao)
-                      .map((cat) => (
-                        <TouchableOpacity
-                          key={cat.id}
-                          style={[
-                            styles.catPill,
-                            { backgroundColor: Cores.pillFundo },
-                            catSelecionadaId === cat.id && {
-                              borderColor: cat.cor,
-                              borderWidth: 2,
-                            },
-                          ]}
-                          onPress={() => setCatSelecionadaId(cat.id)}
-                        >
-                          <View
-                            style={[
-                              styles.colorDot,
-                              { backgroundColor: cat.cor },
-                            ]}
-                          />
-                          <Text style={{ color: Cores.textoPrincipal }}>
-                            {cat.nome}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Categoria:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
+                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).map((cat) => (
+                      <TouchableOpacity key={cat.id} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, catSelecionadaId === cat.id && { borderColor: cat.cor, borderWidth: 2 }]} onPress={() => setCatSelecionadaId(cat.id)}>
+                        <View style={[styles.colorDot, { backgroundColor: cat.cor }]} />
+                        <Text style={{ color: Cores.textoPrincipal }}>{cat.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
                   </ScrollView>
                 </>
               )}
 
               <View style={styles.modalButtons}>
-                <Button
-                  title="Cancelar"
-                  color="#999"
-                  onPress={() => setModalTransVisivel(false)}
-                />
-                <Button
-                  title="Guardar"
-                  color={isDark ? "#FFF" : "#1A1A1A"}
-                  onPress={salvarTransacao}
-                />
+                <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} />
+                <Button title="Guardar" color={isDark ? "#FFF" : "#1A1A1A"} onPress={salvarTransacao} />
               </View>
             </View>
           </ScrollView>
@@ -1330,107 +1109,53 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, padding: 20, marginTop: 10 },
-  header: { marginBottom: 20 },
-  greeting: { fontSize: 28, fontWeight: "bold" },
-  subtitle: { fontSize: 16, marginTop: 4 },
-  actionScroll: { flexDirection: "row", marginBottom: 20 },
-  actionButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginRight: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
-  balanceCard: {
-    backgroundColor: "#1A1A1A",
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 20,
-    elevation: 4,
-  },
-  balanceTitle: {
-    color: "#999",
-    fontSize: 14,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  balanceAmount: {
-    color: "#FFF",
-    fontSize: 36,
-    fontWeight: "bold",
-    marginTop: 5,
-  },
-  section: { marginBottom: 25 },
-  sectionHeader: {
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  greeting: { fontSize: 24, fontWeight: "bold" },
+  subtitle: { fontSize: 14, marginTop: 2 },
+  iaBotaoFixo: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 15,
+    backgroundColor: "#1D3557",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 5,
+    marginLeft: 10,
   },
+  iaBotaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 13 },
+  actionScroll: { flexDirection: "row", marginBottom: 20 },
+  actionButton: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, marginRight: 10, alignItems: "center", justifyContent: "center" },
+  actionButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
+  mesBotao: { padding: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20 },
+  mesBotaoModal: { padding: 8, backgroundColor: "rgba(0,0,0,0.05)", borderRadius: 20 },
+  mesItem: { width: "23%", alignItems: "center", paddingVertical: 10, borderRadius: 8, marginBottom: 8 },
+  balanceCard: { backgroundColor: "#1A1A1A", padding: 20, borderRadius: 16, marginBottom: 20, elevation: 4 },
+  balanceTitle: { color: "#999", fontSize: 14, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
+  balanceAmount: { color: "#FFF", fontSize: 36, fontWeight: "bold", marginTop: 5 },
+  section: { marginBottom: 25 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: "bold" },
   hintText: { fontSize: 12, fontStyle: "italic" },
   emptyText: { fontStyle: "italic", textAlign: "center", marginTop: 10 },
   accountsGrid: { gap: 10 },
-  accountCard: {
-    padding: 20,
-    borderRadius: 12,
-    minWidth: "100%",
-    elevation: 2,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
+  accountCard: { padding: 20, borderRadius: 12, minWidth: "100%", elevation: 2, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   accountName: { fontSize: 16, fontWeight: "600" },
   accountBalance: { fontSize: 20, fontWeight: "bold" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-  },
-  scrollModalContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 20,
-  },
+  graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
+  graficoTitulo: { fontSize: 14, fontWeight: "bold" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
+  scrollModalContent: { flexGrow: 1, justifyContent: "center", alignItems: "center", paddingVertical: 20 },
   modalContent: { width: "95%", padding: 20, borderRadius: 16, elevation: 5 },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 15,
-    textAlign: "center",
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 15,
-  },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
+  input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 15 },
   datePickerText: { fontSize: 16, fontWeight: "500" },
   rowInputs: { flexDirection: "row", justifyContent: "space-between" },
   colorLabel: { fontSize: 14, fontWeight: "500", marginBottom: 10 },
-  colorPalette: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 25,
-  },
+  colorPalette: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 },
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginTop: 20,
-  },
-  typeSelector: {
-    flexDirection: "row",
-    marginBottom: 15,
-    borderWidth: 1,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
+  iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
+  typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   typeButton: { flex: 1, padding: 12, alignItems: "center" },
   typeButtonText: { fontWeight: "bold" },
   expenseSelected: { backgroundColor: "#E76F51" },
@@ -1439,13 +1164,10 @@ const styles = StyleSheet.create({
   freqButton: { flex: 1, padding: 10, alignItems: "center" },
   freqButtonText: { fontSize: 13, fontWeight: "600" },
   catScroll: { flexDirection: "row", marginBottom: 15 },
-  catPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginRight: 10,
-  },
+  catPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, marginRight: 10 },
   colorDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
+  catGerenciarRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: 10, marginBottom: 8 },
+  iconeBotao: { padding: 6 },
+  botaoApagar: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#E76F51", padding: 12, borderRadius: 8, gap: 6 },
+  botaoApagarTexto: { color: "#FFF", fontWeight: "bold" },
 });
