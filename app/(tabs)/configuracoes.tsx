@@ -43,9 +43,20 @@ export default function ConfiguracoesScreen() {
   const [nomeEdit, setNomeEdit] = useState("");
   const [emailEdit, setEmailEdit] = useState("");
   const [telefoneEdit, setTelefoneEdit] = useState("");
-  const [novaSenha, setNovaSenha] = useState("");
   const [loadingPerfil, setLoadingPerfil] = useState(false);
   const [abaPerfilAtiva, setAbaPerfilAtiva] = useState<"dados" | "senha">("dados");
+
+  // Senha
+  const [novaSenha, setNovaSenha] = useState("");
+  const [novaSenhaConfirm, setNovaSenhaConfirm] = useState("");
+  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
+  const [mostrarConfirmSenha, setMostrarConfirmSenha] = useState(false);
+
+  // Feedback
+  const [modalFeedbackVisivel, setModalFeedbackVisivel] = useState(false);
+  const [tipoFeedback, setTipoFeedback] = useState<"problema" | "sugestao" | "reclamacao">("sugestao");
+  const [mensagemFeedback, setMensagemFeedback] = useState("");
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
 
   const carregarParceria = async () => {
     if (!meuId || !meuEmail) return;
@@ -59,7 +70,6 @@ export default function ConfiguracoesScreen() {
 
   useFocusEffect(useCallback(() => {
     carregarParceria();
-    // Preencher campos do perfil com dados atuais
     const meta = session?.user?.user_metadata;
     setNomeEdit(meta?.nome_usuario || meta?.full_name || "");
     setTelefoneEdit(meta?.telefone || "");
@@ -81,7 +91,7 @@ export default function ConfiguracoesScreen() {
     const { error } = await supabase.from("parcerias").update({ convidado_id: meuId, status: "aceito" }).eq("id", parceria.id);
     setLoadingParceria(false);
     if (error) Alert.alert("Erro", "Falha ao aceitar o convite.");
-    else { Alert.alert("Parceria Formada! 🎉", "Agora vocês podem criar Contas Conjuntas!"); carregarParceria(); }
+    else { Alert.alert("Parceria Formada!", "Agora vocês podem criar Contas Conjuntas!"); carregarParceria(); }
   };
 
   const deletarParceria = async (mensagem: string) => {
@@ -116,8 +126,12 @@ export default function ConfiguracoesScreen() {
 
     const updates: any = { data: { nome_usuario: nomeEdit.trim(), telefone: telefoneEdit.trim() } };
 
-    // Se email mudou
     if (emailEdit.trim().toLowerCase() !== meuEmail.toLowerCase() && emailEdit.trim() !== "") {
+      Alert.alert(
+        "Confirmação de E-mail",
+        `Um link de confirmação será enviado para "${emailEdit.trim()}". Verifique sua caixa de entrada para confirmar a alteração.`,
+        [{ text: "OK" }]
+      );
       const { error: emailError } = await supabase.auth.updateUser({ email: emailEdit.trim().toLowerCase() });
       if (emailError) {
         setLoadingPerfil(false);
@@ -134,37 +148,53 @@ export default function ConfiguracoesScreen() {
 
   const alterarSenha = async () => {
     if (novaSenha.length < 6) return Alert.alert("Aviso", "A nova senha deve ter pelo menos 6 caracteres.");
+    if (novaSenha !== novaSenhaConfirm) return Alert.alert("Aviso", "As senhas não conferem. Verifique e tente novamente.");
+
     setLoadingPerfil(true);
     const { error } = await supabase.auth.updateUser({ password: novaSenha });
     setLoadingPerfil(false);
     if (error) Alert.alert("Erro", "Não foi possível alterar a senha. " + error.message);
-    else { Alert.alert("Sucesso", "Senha alterada com sucesso!"); setNovaSenha(""); setModalPerfilVisivel(false); }
+    else {
+      Alert.alert("Sucesso", "Senha alterada com sucesso!");
+      setNovaSenha(""); setNovaSenhaConfirm("");
+      setModalPerfilVisivel(false);
+    }
   };
 
   const confirmarApagarConta = () => {
     Alert.alert(
       "Apagar Conta",
-      "⚠️ Esta ação é irreversível!\n\nTodos os seus dados (transações, contas, objetivos e categorias) serão permanentemente apagados.\n\nTem certeza absoluta?",
+      "⚠️ Esta ação é irreversível!\n\nTodos os seus dados serão permanentemente apagados.\n\nTem certeza absoluta?",
       [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Sim, apagar tudo",
           style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Confirmação Final",
-              "Digite 'APAGAR' para confirmar a exclusão permanente da conta.",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Confirmar exclusão",
-                  style: "destructive",
-                  onPress: async () => {
-                    await apagarContaCompleta();
-                  },
-                },
-              ]
-            );
+          onPress: async () => {
+            // Tenta autenticar via biometria antes de excluir
+            const temHardware = await LocalAuthentication.hasHardwareAsync();
+            const temBiometria = await LocalAuthentication.isEnrolledAsync();
+
+            if (temHardware && temBiometria) {
+              const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirme sua identidade para apagar a conta" });
+              if (!result.success) {
+                Alert.alert("Cancelado", "Autenticação necessária para apagar a conta.");
+                return;
+              }
+            } else {
+              // Sem biometria, confirmar por alerta adicional
+              Alert.alert(
+                "Confirmação Final",
+                "Confirme que deseja apagar permanentemente todos os seus dados.",
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  { text: "Confirmar exclusão", style: "destructive", onPress: apagarContaCompleta },
+                ]
+              );
+              return;
+            }
+
+            await apagarContaCompleta();
           },
         },
       ]
@@ -174,7 +204,6 @@ export default function ConfiguracoesScreen() {
   const apagarContaCompleta = async () => {
     if (!meuId) return;
     try {
-      // Apagar todos os dados do usuário
       await Promise.all([
         supabase.from("transacoes").delete().eq("user_id", meuId),
         supabase.from("caixinhas").delete().eq("user_id", meuId),
@@ -182,12 +211,35 @@ export default function ConfiguracoesScreen() {
         supabase.from("categorias").delete().eq("user_id", meuId),
         supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`),
       ]);
-
-      // Fazer logout (a conta de auth seria apagada via função no backend idealmente)
       await supabase.auth.signOut();
       Alert.alert("Conta apagada", "Seus dados foram removidos com sucesso.");
     } catch (error) {
       Alert.alert("Erro", "Não foi possível apagar todos os dados. Tente novamente.");
+    }
+  };
+
+  const enviarFeedback = async () => {
+    if (mensagemFeedback.trim().length < 10)
+      return Alert.alert("Aviso", "Por favor, descreva melhor o seu feedback (mínimo 10 caracteres).");
+    setLoadingFeedback(true);
+    try {
+      const { error } = await supabase.from("feedbacks").insert({
+        user_id: meuId,
+        tipo: tipoFeedback,
+        mensagem: mensagemFeedback.trim(),
+        created_at: new Date().toISOString(),
+      });
+      setLoadingFeedback(false);
+      if (error) {
+        Alert.alert("Erro", "Não foi possível enviar o feedback. Tente novamente.");
+      } else {
+        Alert.alert("Obrigado!", "Seu feedback foi enviado com sucesso. Vamos analisar e melhorar o FinFlow!");
+        setMensagemFeedback("");
+        setModalFeedbackVisivel(false);
+      }
+    } catch (e) {
+      setLoadingFeedback(false);
+      Alert.alert("Erro", "Falha ao enviar feedback.");
     }
   };
 
@@ -198,6 +250,16 @@ export default function ConfiguracoesScreen() {
       <ScrollView>
         <View style={styles.header}>
           <Text style={[styles.title, { color: Cores.texto }]}>Configurações</Text>
+          <TouchableOpacity
+            style={[styles.ajudaBtn, { backgroundColor: Cores.pillFundo }]}
+            onPress={() => {
+              setTipoFeedback("sugestao");
+              setMensagemFeedback("");
+              setModalFeedbackVisivel(true);
+            }}
+          >
+            <MaterialIcons name="help-outline" size={22} color={Cores.secundario} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
@@ -210,7 +272,8 @@ export default function ConfiguracoesScreen() {
               setNomeEdit(meta?.nome_usuario || meta?.full_name || "");
               setTelefoneEdit(meta?.telefone || "");
               setEmailEdit(meuEmail);
-              setNovaSenha("");
+              setNovaSenha(""); setNovaSenhaConfirm("");
+              setMostrarNovaSenha(false); setMostrarConfirmSenha(false);
               setAbaPerfilAtiva("dados");
               setModalPerfilVisivel(true);
             }}
@@ -323,13 +386,64 @@ export default function ConfiguracoesScreen() {
         </View>
       </ScrollView>
 
+      {/* MODAL FEEDBACK */}
+      {modalFeedbackVisivel && (
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.card }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 }}>
+              <Text style={[styles.modalTitle, { color: Cores.texto, marginBottom: 0 }]}>Fale Conosco</Text>
+              <TouchableOpacity onPress={() => setModalFeedbackVisivel(false)}>
+                <MaterialIcons name="close" size={24} color={Cores.secundario} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Tipo:</Text>
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 15 }}>
+              {([
+                { key: "sugestao", label: "Sugestão", cor: "#2A9D8F" },
+                { key: "problema", label: "Problema", cor: "#E76F51" },
+                { key: "reclamacao", label: "Reclamação", cor: "#F4A261" },
+              ] as const).map((op) => (
+                <TouchableOpacity
+                  key={op.key}
+                  style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center", backgroundColor: tipoFeedback === op.key ? op.cor : Cores.pillFundo }}
+                  onPress={() => setTipoFeedback(op.key)}
+                >
+                  <Text style={{ color: tipoFeedback === op.key ? "#FFF" : Cores.secundario, fontWeight: "600", fontSize: 12 }}>{op.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Mensagem:</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto, minHeight: 100, textAlignVertical: "top" }]}
+              placeholder="Descreva sua sugestão, problema ou reclamação..."
+              placeholderTextColor={Cores.secundario}
+              value={mensagemFeedback}
+              onChangeText={setMensagemFeedback}
+              multiline
+              numberOfLines={4}
+            />
+            {loadingFeedback ? (
+              <ActivityIndicator size="small" color="#2A9D8F" style={{ marginTop: 10 }} />
+            ) : (
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalFeedbackVisivel(false)}>
+                  <Text style={[styles.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#2A9D8F" }]} onPress={enviarFeedback}>
+                  <Text style={[styles.modalBtnText, { color: "#FFF" }]}>Enviar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
       {/* MODAL DE EDIÇÃO DE PERFIL */}
       {modalPerfilVisivel && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.card }]}>
             <Text style={[styles.modalTitle, { color: Cores.texto }]}>Editar Perfil</Text>
 
-            {/* Abas */}
             <View style={[styles.abaSelector, { backgroundColor: Cores.pillFundo }]}>
               <TouchableOpacity
                 style={[styles.abaBtn, abaPerfilAtiva === "dados" && { backgroundColor: Cores.card }]}
@@ -365,6 +479,11 @@ export default function ConfiguracoesScreen() {
                   autoCapitalize="none"
                   keyboardType="email-address"
                 />
+                {emailEdit.trim().toLowerCase() !== meuEmail.toLowerCase() && (
+                  <Text style={{ color: "#F4A261", fontSize: 11, marginTop: -10, marginBottom: 12 }}>
+                    Um link de confirmação será enviado ao novo e-mail.
+                  </Text>
+                )}
                 <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Telefone</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
@@ -390,15 +509,41 @@ export default function ConfiguracoesScreen() {
             ) : (
               <>
                 <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Nova Senha</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="Mínimo 6 caracteres"
-                  placeholderTextColor={Cores.secundario}
-                  value={novaSenha}
-                  onChangeText={setNovaSenha}
-                  secureTextEntry
-                />
-                <Text style={[{ color: Cores.secundario, fontSize: 12, marginBottom: 15, marginTop: -10 }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 15 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto, marginBottom: 0 }]}
+                    placeholder="Mínimo 6 caracteres"
+                    placeholderTextColor={Cores.secundario}
+                    value={novaSenha}
+                    onChangeText={setNovaSenha}
+                    secureTextEntry={!mostrarNovaSenha}
+                  />
+                  <TouchableOpacity onPress={() => setMostrarNovaSenha((v) => !v)} style={{ padding: 12 }}>
+                    <MaterialIcons name={mostrarNovaSenha ? "visibility-off" : "visibility"} size={20} color={Cores.secundario} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Confirmar Nova Senha</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 5 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, backgroundColor: Cores.input, borderColor: novaSenhaConfirm.length > 0 && novaSenha !== novaSenhaConfirm ? "#E76F51" : Cores.borda, color: Cores.texto, marginBottom: 0 }]}
+                    placeholder="Repita a nova senha"
+                    placeholderTextColor={Cores.secundario}
+                    value={novaSenhaConfirm}
+                    onChangeText={setNovaSenhaConfirm}
+                    secureTextEntry={!mostrarConfirmSenha}
+                  />
+                  <TouchableOpacity onPress={() => setMostrarConfirmSenha((v) => !v)} style={{ padding: 12 }}>
+                    <MaterialIcons name={mostrarConfirmSenha ? "visibility-off" : "visibility"} size={20} color={Cores.secundario} />
+                  </TouchableOpacity>
+                </View>
+                {novaSenhaConfirm.length > 0 && novaSenha !== novaSenhaConfirm && (
+                  <Text style={{ color: "#E76F51", fontSize: 12, marginBottom: 10 }}>As senhas não conferem</Text>
+                )}
+                {novaSenhaConfirm.length > 0 && novaSenha === novaSenhaConfirm && (
+                  <Text style={{ color: "#2A9D8F", fontSize: 12, marginBottom: 10 }}>Senhas conferem ✓</Text>
+                )}
+                <Text style={[{ color: Cores.secundario, fontSize: 12, marginBottom: 15 }]}>
                   Um link de confirmação pode ser enviado para o seu e-mail.
                 </Text>
                 {loadingPerfil ? (
@@ -424,8 +569,9 @@ export default function ConfiguracoesScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { padding: 20, paddingTop: 30, paddingBottom: 10 },
+  header: { padding: 20, paddingTop: 30, paddingBottom: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 28, fontWeight: "bold" },
+  ajudaBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   content: { padding: 20 },
 
   perfilCard: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 5 },
@@ -456,7 +602,6 @@ const styles = StyleSheet.create({
   emailText: { fontSize: 16, fontWeight: "bold", marginTop: 5, marginBottom: 15 },
   rowBtns: { flexDirection: "row", width: "100%" },
 
-  // Modal de perfil
   modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center" },
   modalContent: { width: "92%", padding: 24, borderRadius: 16, elevation: 5 },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20, textAlign: "center" },

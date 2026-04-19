@@ -33,6 +33,7 @@ interface Conta {
   nome: string;
   saldo_inicial: number;
   compartilhado: boolean;
+  cor?: string;
 }
 interface Transacao {
   id: number;
@@ -64,7 +65,15 @@ const LISTA_ICONES = [
   "card-giftcard", "build",
 ];
 
-const getEstiloBanco = (nome: string, isDark: boolean) => {
+const getSaudacao = () => {
+  const hora = new Date().getHours();
+  if (hora >= 5 && hora < 12) return "Bom dia";
+  if (hora >= 12 && hora < 18) return "Boa tarde";
+  return "Boa noite";
+};
+
+const getEstiloBanco = (nome: string, isDark: boolean, corCustom?: string) => {
+  if (corCustom) return { bg: corCustom, text: "#FFF" };
   const n = nome.toLowerCase();
   if (n.includes("nu") || n.includes("nubank"))
     return { bg: "#8A05BE", text: "#FFF" };
@@ -218,12 +227,15 @@ export default function Dashboard() {
   const [nomeConta, setNomeConta] = useState("");
   const [saldoInicialConta, setSaldoInicialConta] = useState("");
   const [contaCompartilhada, setContaCompartilhada] = useState(false);
+  const [corNovaConta, setCorNovaConta] = useState(PALETA_CORES[6]);
 
   const [modalEditarContaVisivel, setModalEditarContaVisivel] = useState(false);
   const [contaEditando, setContaEditando] = useState<Conta | null>(null);
   const [nomeEditConta, setNomeEditConta] = useState("");
   const [saldoEditConta, setSaldoEditConta] = useState("");
   const [compartilhadoEditConta, setCompartilhadoEditConta] = useState(false);
+  const [corEditConta, setCorEditConta] = useState(PALETA_CORES[0]);
+  const [editandoSaldoConta, setEditandoSaldoConta] = useState(false);
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [descTransacao, setDescTransacao] = useState("");
@@ -404,12 +416,14 @@ export default function Dashboard() {
     if (nomeConta.trim() === "") return Alert.alert("Aviso", "Dá um nome à conta.");
     const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
     const { error } = await supabase.from("contas").insert([{
-      nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada,
+      nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id,
+      compartilhado: contaCompartilhada, cor: corNovaConta,
     }]);
     if (error) return Alert.alert("Erro", "Falha ao salvar conta.");
     setNomeConta("");
     setSaldoInicialConta("");
     setContaCompartilhada(false);
+    setCorNovaConta(PALETA_CORES[6]);
     setModalContaVisivel(false);
     carregarDados();
   };
@@ -419,34 +433,71 @@ export default function Dashboard() {
     setNomeEditConta(conta.nome);
     setSaldoEditConta(String(conta.saldo_inicial));
     setCompartilhadoEditConta(conta.compartilhado);
+    setCorEditConta(conta.cor || PALETA_CORES[0]);
+    setEditandoSaldoConta(false);
     setModalEditarContaVisivel(true);
   };
 
   const salvarEdicaoConta = async () => {
     if (!contaEditando || nomeEditConta.trim() === "") return Alert.alert("Aviso", "Nome inválido.");
-    const saldoNum = parseFloat(saldoEditConta.replace(",", ".")) || 0;
-    const { error } = await supabase.from("contas").update({
-      nome: nomeEditConta, saldo_inicial: saldoNum, compartilhado: compartilhadoEditConta,
-    }).eq("id", contaEditando.id);
+    const updates: any = { nome: nomeEditConta, compartilhado: compartilhadoEditConta, cor: corEditConta };
+    if (editandoSaldoConta) {
+      const saldoNum = parseFloat(saldoEditConta.replace(",", "."));
+      if (isNaN(saldoNum)) return Alert.alert("Aviso", "Saldo inválido.");
+      updates.saldo_inicial = saldoNum;
+    }
+    const { error } = await supabase.from("contas").update(updates).eq("id", contaEditando.id);
     if (error) return Alert.alert("Erro", "Falha ao atualizar conta.");
     setModalEditarContaVisivel(false);
     setContaEditando(null);
+    setEditandoSaldoConta(false);
     carregarDados();
   };
 
-  const deletarConta = (id: number, nome: string) => {
-    Alert.alert("Eliminar Conta", `Tens a certeza que desejas apagar "${nome}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Apagar",
-        style: "destructive",
-        onPress: async () => {
-          const { error } = await supabase.from("contas").delete().eq("id", id);
-          if (error) Alert.alert("Não foi possível", "Apague as transações desta conta primeiro.");
-          else { setModalEditarContaVisivel(false); carregarDados(); }
-        },
-      },
-    ]);
+  const arquivarConta = (conta: Conta) => {
+    const temLancamentos = transacoes.some((t) => t.conta_id === conta.id);
+    if (temLancamentos) {
+      Alert.alert(
+        "Arquivar Conta",
+        `A conta "${conta.nome}" tem lançamentos e não pode ser excluída. Deseja arquivá-la?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Arquivar",
+            onPress: async () => {
+              await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
+              setModalEditarContaVisivel(false);
+              carregarDados();
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        "Arquivar Conta",
+        `Deseja arquivar "${conta.nome}"? Ela não possui lançamentos e poderia ser excluída.`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Arquivar",
+            onPress: async () => {
+              await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
+              setModalEditarContaVisivel(false);
+              carregarDados();
+            },
+          },
+          {
+            text: "Excluir",
+            style: "destructive",
+            onPress: async () => {
+              await supabase.from("contas").delete().eq("id", conta.id);
+              setModalEditarContaVisivel(false);
+              carregarDados();
+            },
+          },
+        ]
+      );
+    }
   };
 
   // --- Transação ---
@@ -518,10 +569,10 @@ export default function Dashboard() {
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.greeting, { color: Cores.textoPrincipal }]}>
-              Olá, {nomeUsuario}!
+              {getSaudacao()}, {nomeUsuario}!
             </Text>
             <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
-              O teu painel financeiro na nuvem ☁️
+              Seu painel financeiro FinFlow
             </Text>
           </View>
           <TouchableOpacity
@@ -534,17 +585,11 @@ export default function Dashboard() {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionScroll}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#457B9D" }]} onPress={() => setModalContaVisivel(true)}>
-            <Text style={styles.actionButtonText}>+ Conta</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#2A9D8F" }]} onPress={() => setModalCatVisivel(true)}>
-            <Text style={styles.actionButtonText}>+ Categoria</Text>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#E76F51" }]} onPress={() => setModalTransVisivel(true)}>
+            <Text style={styles.actionButtonText}>+ Transação</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#8AB17D" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
             <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#E76F51" }]} onPress={() => setModalTransVisivel(true)}>
-            <Text style={styles.actionButtonText}>+ Transação</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -603,21 +648,27 @@ export default function Dashboard() {
         {/* CONTAS */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}>As Minhas Contas</Text>
-            <Text style={[styles.hintText, { color: Cores.textoSecundario }]}>(Segura para editar)</Text>
+            <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}>Minhas Contas</Text>
+            <TouchableOpacity
+              style={[styles.addContaBtn, { backgroundColor: "#457B9D" }]}
+              onPress={() => setModalContaVisivel(true)}
+            >
+              <MaterialIcons name="add" size={16} color="#FFF" />
+              <Text style={styles.addContaBtnText}>Nova Conta</Text>
+            </TouchableOpacity>
           </View>
 
           {contas.length === 0 ? (
-            <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não registaste nenhuma conta.</Text>
+            <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não registou nenhuma conta. Toque em "Nova Conta" para começar.</Text>
           ) : (
             <View style={styles.accountsGrid}>
               {contas.map((conta) => {
-                const estilo = getEstiloBanco(conta.nome, isDark);
+                const estilo = getEstiloBanco(conta.nome, isDark, conta.cor);
                 return (
                   <TouchableOpacity
                     key={conta.id}
                     style={[styles.accountCard, { backgroundColor: estilo.bg, borderColor: isDark ? Cores.borda : estilo.bg, borderWidth: isDark ? 1 : 0 }]}
-                    onLongPress={() => abrirEditarConta(conta)}
+                    onPress={() => abrirEditarConta(conta)}
                     activeOpacity={0.8}
                   >
                     <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -631,6 +682,7 @@ export default function Dashboard() {
                     <Text style={[styles.accountBalance, { color: estilo.text }]}>
                       R$ {calcularSaldoConta(conta).toFixed(2)}
                     </Text>
+                    <Text style={{ color: estilo.text, opacity: 0.6, fontSize: 11, marginTop: 4 }}>Toque para editar</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -729,50 +781,102 @@ export default function Dashboard() {
       </Modal>
 
       {/* MODAL EDITAR CONTA */}
-      <Modal animationType="slide" transparent visible={modalEditarContaVisivel} onRequestClose={() => setModalEditarContaVisivel(false)}>
+      <Modal animationType="slide" transparent visible={modalEditarContaVisivel} onRequestClose={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Editar Conta</Text>
+          <ScrollView contentContainerStyle={styles.scrollModalContent}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Editar Conta</Text>
 
-            {temParceiro && (
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
-                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Conta Conjunta?</Text>
+              {/* Info estática da conta */}
+              {contaEditando && (
+                <View style={{ alignItems: "center", marginBottom: 20, padding: 15, backgroundColor: Cores.pillFundo, borderRadius: 12 }}>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginBottom: 4 }}>Saldo Atual</Text>
+                  <Text style={{ color: "#2A9D8F", fontSize: 26, fontWeight: "bold" }}>
+                    R$ {calcularSaldoConta(contaEditando).toFixed(2)}
+                  </Text>
                 </View>
-                <Switch value={compartilhadoEditConta} onValueChange={setCompartilhadoEditConta} trackColor={{ false: "#767577", true: "#E76F51" }} />
+              )}
+
+              {temParceiro && (
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
+                    <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Conta Conjunta?</Text>
+                  </View>
+                  <Switch value={compartilhadoEditConta} onValueChange={setCompartilhadoEditConta} trackColor={{ false: "#767577", true: "#E76F51" }} />
+                </View>
+              )}
+
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Nome da Conta:</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                placeholder="Nome da conta"
+                placeholderTextColor={Cores.textoSecundario}
+                value={nomeEditConta}
+                onChangeText={setNomeEditConta}
+              />
+
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor da Conta:</Text>
+              <View style={styles.colorPalette}>
+                {PALETA_CORES.map((cor) => (
+                  <TouchableOpacity
+                    key={cor}
+                    style={[styles.colorOption, { backgroundColor: cor }, corEditConta === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
+                    onPress={() => setCorEditConta(cor)}
+                  />
+                ))}
               </View>
-            )}
 
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Nome da conta"
-              placeholderTextColor={Cores.textoSecundario}
-              value={nomeEditConta}
-              onChangeText={setNomeEditConta}
-            />
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Saldo Inicial"
-              placeholderTextColor={Cores.textoSecundario}
-              value={saldoEditConta}
-              onChangeText={setSaldoEditConta}
-              keyboardType="numeric"
-            />
+              {/* Editar saldo inicial com confirmação */}
+              <TouchableOpacity
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, backgroundColor: Cores.pillFundo, borderRadius: 8, marginBottom: 15 }}
+                onPress={() => {
+                  if (!editandoSaldoConta) {
+                    Alert.alert(
+                      "Editar Saldo Inicial",
+                      "Alterar o saldo inicial afeta o cálculo do saldo da conta. Confirma?",
+                      [
+                        { text: "Cancelar", style: "cancel" },
+                        { text: "Sim, editar", onPress: () => setEditandoSaldoConta(true) },
+                      ]
+                    );
+                  } else {
+                    setEditandoSaldoConta(false);
+                  }
+                }}
+              >
+                <Text style={{ color: Cores.textoPrincipal, fontWeight: "600" }}>
+                  {editandoSaldoConta ? "Cancelar edição de saldo" : "Editar Saldo Inicial"}
+                </Text>
+                <MaterialIcons name={editandoSaldoConta ? "close" : "edit"} size={18} color="#457B9D" />
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.botaoApagar, { marginBottom: 15 }]}
-              onPress={() => contaEditando && deletarConta(contaEditando.id, contaEditando.nome)}
-            >
-              <MaterialIcons name="delete-outline" size={18} color="#FFF" />
-              <Text style={styles.botaoApagarTexto}>Apagar Conta</Text>
-            </TouchableOpacity>
+              {editandoSaldoConta && (
+                <TextInput
+                  style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: "#457B9D", color: Cores.textoPrincipal, borderWidth: 2 }]}
+                  placeholder="Novo Saldo Inicial"
+                  placeholderTextColor={Cores.textoSecundario}
+                  value={saldoEditConta}
+                  onChangeText={setSaldoEditConta}
+                  keyboardType="numeric"
+                />
+              )}
 
-            <View style={styles.modalButtons}>
-              <Button title="Cancelar" color="#999" onPress={() => setModalEditarContaVisivel(false)} />
-              <Button title="Salvar" color="#457B9D" onPress={salvarEdicaoConta} />
+              {/* Arquivar */}
+              <TouchableOpacity
+                style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: "#F4A261" }]}
+                onPress={() => contaEditando && arquivarConta(contaEditando)}
+              >
+                <MaterialIcons name="archive" size={18} color="#FFF" />
+                <Text style={styles.botaoApagarTexto}>Arquivar Conta</Text>
+              </TouchableOpacity>
+
+              <View style={styles.modalButtons}>
+                <Button title="Cancelar" color="#999" onPress={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }} />
+                <Button title="Salvar" color="#457B9D" onPress={salvarEdicaoConta} />
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -794,7 +898,7 @@ export default function Dashboard() {
 
             <TextInput
               style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Nome (ex: Itaú Casa, Carteira)"
+              placeholder="Nome (ex: Itaú Casa, Carteira)*"
               placeholderTextColor={Cores.textoSecundario}
               value={nomeConta}
               onChangeText={setNomeConta}
@@ -807,6 +911,24 @@ export default function Dashboard() {
               onChangeText={setSaldoInicialConta}
               keyboardType="numeric"
             />
+
+            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor da Conta*:</Text>
+            <View style={styles.colorPalette}>
+              {PALETA_CORES.map((cor) => (
+                <TouchableOpacity
+                  key={cor}
+                  style={[styles.colorOption, { backgroundColor: cor }, corNovaConta === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
+                  onPress={() => setCorNovaConta(cor)}
+                />
+              ))}
+            </View>
+
+            {/* Preview da conta */}
+            <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
+              <Text style={{ color: "#FFF", fontWeight: "600" }}>{nomeConta || "Nome da Conta"}</Text>
+              <Text style={{ color: "#FFF", fontWeight: "bold" }}>R$ {parseFloat(saldoInicialConta.replace(",", ".") || "0").toFixed(2)}</Text>
+            </View>
+
             <View style={styles.modalButtons}>
               <Button title="Cancelar" color="#999" onPress={() => setModalContaVisivel(false)} />
               <Button title="Guardar" color="#457B9D" onPress={salvarConta} />
@@ -820,6 +942,16 @@ export default function Dashboard() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "85%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Gerenciar Categorias</Text>
+
+            {!catEditando && (
+              <TouchableOpacity
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#2A9D8F", padding: 10, borderRadius: 8, marginBottom: 15, gap: 6 }}
+                onPress={() => { setModalGerenciarCatVisivel(false); setModalCatVisivel(true); }}
+              >
+                <MaterialIcons name="add" size={18} color="#FFF" />
+                <Text style={{ color: "#FFF", fontWeight: "bold" }}>Nova Categoria</Text>
+              </TouchableOpacity>
+            )}
 
             {catEditando ? (
               // Tela de edição de categoria específica
@@ -1138,9 +1270,11 @@ const styles = StyleSheet.create({
   hintText: { fontSize: 12, fontStyle: "italic" },
   emptyText: { fontStyle: "italic", textAlign: "center", marginTop: 10 },
   accountsGrid: { gap: 10 },
-  accountCard: { padding: 20, borderRadius: 12, minWidth: "100%", elevation: 2, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  accountCard: { padding: 20, borderRadius: 12, minWidth: "100%", elevation: 2 },
   accountName: { fontSize: 16, fontWeight: "600" },
-  accountBalance: { fontSize: 20, fontWeight: "bold" },
+  accountBalance: { fontSize: 20, fontWeight: "bold", marginTop: 4 },
+  addContaBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, gap: 4 },
+  addContaBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 13 },
   graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },

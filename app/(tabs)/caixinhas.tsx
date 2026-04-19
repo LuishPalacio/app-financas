@@ -81,6 +81,17 @@ export default function CaixinhasScreen() {
   const [corSelecionada, setCorSelecionada] = useState(PALETA_CORES[0]);
   const [iconeSelecionado, setIconeSelecionado] = useState("savings");
 
+  // Modal opções (click no card)
+  const [modalOpcoesVisivel, setModalOpcoesVisivel] = useState(false);
+  const [caixaOpcoes, setCaixaOpcoes] = useState<Caixinha | null>(null);
+
+  // Modal editar caixinha
+  const [modalEditarVisivel, setModalEditarVisivel] = useState(false);
+  const [nomeEditCaixa, setNomeEditCaixa] = useState("");
+  const [metaEditCaixa, setMetaEditCaixa] = useState("");
+  const [corEditCaixa, setCorEditCaixa] = useState(PALETA_CORES[0]);
+  const [iconeEditCaixa, setIconeEditCaixa] = useState("savings");
+
   // Modal movimento
   const [modalMovimentoVisivel, setModalMovimentoVisivel] = useState(false);
   const [caixaSelecionada, setCaixaSelecionada] = useState<Caixinha | null>(null);
@@ -130,27 +141,59 @@ export default function CaixinhasScreen() {
     }
   };
 
-  const deletarCaixinha = (id: number, nome: string, saldoAtual: number) => {
-    if (Number(saldoAtual) > 0) {
+  const abrirOpcoes = (caixa: Caixinha) => {
+    setCaixaOpcoes(caixa);
+    setModalOpcoesVisivel(true);
+  };
+
+  const abrirEditar = (caixa: Caixinha) => {
+    setModalOpcoesVisivel(false);
+    setNomeEditCaixa(caixa.nome);
+    setMetaEditCaixa(String(caixa.meta_valor));
+    setCorEditCaixa(caixa.cor);
+    setIconeEditCaixa(caixa.icone);
+    setCaixaOpcoes(caixa);
+    setModalEditarVisivel(true);
+  };
+
+  const salvarEdicaoCaixinha = async () => {
+    if (!caixaOpcoes) return;
+    const valorNum = parseFloat(metaEditCaixa.replace(",", "."));
+    if (nomeEditCaixa.trim() === "" || isNaN(valorNum) || valorNum <= 0)
+      return Alert.alert("Aviso", "Nome e meta são obrigatórios.");
+
+    const { error } = await supabase.from("caixinhas").update({
+      nome: nomeEditCaixa, meta_valor: valorNum, cor: corEditCaixa, icone: iconeEditCaixa,
+    }).eq("id", caixaOpcoes.id);
+
+    if (error) Alert.alert("Erro", "Não foi possível salvar.");
+    else { setModalEditarVisivel(false); setCaixaOpcoes(null); carregarDados(); }
+  };
+
+  const deletarCaixinha = (caixa: Caixinha) => {
+    setModalOpcoesVisivel(false);
+    if (Number(caixa.saldo_atual) > 0) {
       return Alert.alert(
         "Ação não permitida",
-        `O objetivo "${nome}" ainda possui R$ ${Number(saldoAtual).toFixed(2)} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
+        `O objetivo "${caixa.nome}" ainda possui R$ ${Number(caixa.saldo_atual).toFixed(2)} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
         [{ text: "Entendi", style: "cancel" }]
       );
     }
-    Alert.alert("Apagar Objetivo", `Tens a certeza que queres apagar "${nome}"?`, [
+    Alert.alert("Apagar Objetivo", `Tem certeza que quer apagar "${caixa.nome}"?`, [
       { text: "Cancelar", style: "cancel" },
-      { text: "Apagar", style: "destructive", onPress: async () => { await supabase.from("caixinhas").delete().eq("id", id); carregarDados(); } },
+      { text: "Apagar", style: "destructive", onPress: async () => { await supabase.from("caixinhas").delete().eq("id", caixa.id); carregarDados(); } },
     ]);
   };
 
   const abrirMovimento = (caixa: Caixinha) => {
+    setModalOpcoesVisivel(false);
     setCaixaSelecionada(caixa);
     setValorMovimento(""); setTipoMovimento("guardar"); setContaMovimentoId(null);
     setModalMovimentoVisivel(true);
   };
 
   const abrirHistorico = async (caixa: Caixinha) => {
+    setModalOpcoesVisivel(false);
     setCaixaHistorico(caixa);
     const hoje = new Date();
     setFiltroMesHistorico(`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`);
@@ -217,7 +260,6 @@ export default function CaixinhasScreen() {
     executarMovimento(valorNum, novoSaldoCaixinha);
   };
 
-  // Movimentos filtrados por mês
   const movimentosFiltrados = historicoMovimentos.filter((m) => {
     if (!filtroMesHistorico) return true;
     return (m.data_vencimento || "").startsWith(filtroMesHistorico);
@@ -225,15 +267,13 @@ export default function CaixinhasScreen() {
 
   const totalGuardadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Guardar")).reduce((acc, m) => acc + Number(m.valor), 0);
   const totalResgatadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Resgate")).reduce((acc, m) => acc + Number(m.valor), 0);
-
-  // Meses únicos nos movimentos
   const mesesMovimentos = [...new Set(historicoMovimentos.map((m) => (m.data_vencimento || "").substring(0, 7)))].sort().reverse();
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Meus Objetivos</Text>
-        <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>Guarda dinheiro para os teus sonhos</Text>
+        <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>Guarda dinheiro para os seus sonhos</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -246,7 +286,7 @@ export default function CaixinhasScreen() {
         </View>
 
         {caixinhas.length === 0 ? (
-          <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não criaste nenhuma caixinha.</Text>
+          <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não criou nenhuma caixinha.</Text>
         ) : (
           caixinhas.map((caixa) => {
             const porcentagem = Math.min((Number(caixa.saldo_atual) / Number(caixa.meta_valor)) * 100, 100);
@@ -255,8 +295,7 @@ export default function CaixinhasScreen() {
               <TouchableOpacity
                 key={caixa.id}
                 style={[styles.card, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}
-                onPress={() => abrirMovimento(caixa)}
-                onLongPress={() => deletarCaixinha(caixa.id, caixa.nome, caixa.saldo_atual)}
+                onPress={() => abrirOpcoes(caixa)}
                 activeOpacity={0.8}
               >
                 <View style={styles.cardHeader}>
@@ -266,17 +305,9 @@ export default function CaixinhasScreen() {
                     </View>
                     <Text style={[styles.caixaName, { color: Cores.textoPrincipal }]}>{caixa.nome}</Text>
                   </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    <TouchableOpacity
-                      onPress={() => abrirHistorico(caixa)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <MaterialIcons name="history" size={20} color={Cores.textoSecundario} />
-                    </TouchableOpacity>
-                    <Text style={[styles.caixaPercent, { color: Cores.textoSecundario }, isCompleto && { color: "#2A9D8F" }]}>
-                      {isCompleto ? "100% 🎉" : `${porcentagem.toFixed(0)}%`}
-                    </Text>
-                  </View>
+                  <Text style={[styles.caixaPercent, { color: Cores.textoSecundario }, isCompleto && { color: "#2A9D8F" }]}>
+                    {isCompleto ? "100% 🎉" : `${porcentagem.toFixed(0)}%`}
+                  </Text>
                 </View>
 
                 <View style={styles.valuesRow}>
@@ -297,6 +328,107 @@ export default function CaixinhasScreen() {
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* MODAL OPÇÕES */}
+      <Modal animationType="fade" transparent visible={modalOpcoesVisivel} onRequestClose={() => setModalOpcoesVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+            {caixaOpcoes && (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+                <View style={[styles.iconBox, { backgroundColor: caixaOpcoes.cor, marginRight: 10 }]}>
+                  <MaterialIcons name={caixaOpcoes.icone as any} size={20} color="#FFF" />
+                </View>
+                <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 0 }]}>{caixaOpcoes.nome}</Text>
+              </View>
+            )}
+
+            {caixaOpcoes && (
+              <View style={{ alignItems: "center", marginBottom: 20 }}>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 13 }}>Saldo atual</Text>
+                <Text style={{ color: caixaOpcoes.cor, fontWeight: "bold", fontSize: 22 }}>
+                  R$ {Number(caixaOpcoes.saldo_atual).toFixed(2)}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#2A9D8F" }]} onPress={() => caixaOpcoes && abrirMovimento(caixaOpcoes)}>
+              <MaterialIcons name="savings" size={20} color="#FFF" />
+              <Text style={styles.opcaoBtnText}>Movimentar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#457B9D" }]} onPress={() => caixaOpcoes && abrirHistorico(caixaOpcoes)}>
+              <MaterialIcons name="history" size={20} color="#FFF" />
+              <Text style={styles.opcaoBtnText}>Histórico</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#8AB17D" }]} onPress={() => caixaOpcoes && abrirEditar(caixaOpcoes)}>
+              <MaterialIcons name="edit" size={20} color="#FFF" />
+              <Text style={styles.opcaoBtnText}>Editar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#E76F51" }]} onPress={() => caixaOpcoes && deletarCaixinha(caixaOpcoes)}>
+              <MaterialIcons name="delete-outline" size={20} color="#FFF" />
+              <Text style={styles.opcaoBtnText}>Excluir</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalOpcoesVisivel(false)}>
+              <Text style={[styles.opcaoBtnText, { color: Cores.textoSecundario }]}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL EDITAR CAIXINHA */}
+      <Modal animationType="slide" transparent visible={modalEditarVisivel} onRequestClose={() => setModalEditarVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={{ justifyContent: "center", alignItems: "center", flexGrow: 1, paddingVertical: 20 }}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Editar Objetivo</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                placeholderTextColor={Cores.textoSecundario}
+                placeholder="Nome do objetivo"
+                value={nomeEditCaixa}
+                onChangeText={setNomeEditCaixa}
+              />
+              <TextInput
+                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                placeholderTextColor={Cores.textoSecundario}
+                placeholder="Valor da meta"
+                value={metaEditCaixa}
+                onChangeText={setMetaEditCaixa}
+                keyboardType="numeric"
+              />
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
+              <View style={styles.colorPalette}>
+                {PALETA_CORES.map((cor) => (
+                  <TouchableOpacity
+                    key={cor}
+                    style={[styles.colorOption, { backgroundColor: cor }, corEditCaixa === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
+                    onPress={() => setCorEditCaixa(cor)}
+                  />
+                ))}
+              </View>
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+                {LISTA_ICONES.map((icone) => (
+                  <TouchableOpacity
+                    key={icone}
+                    style={[styles.iconeOpcao, { backgroundColor: iconeEditCaixa === icone ? corEditCaixa : Cores.pillFundo }]}
+                    onPress={() => setIconeEditCaixa(icone)}
+                  >
+                    <MaterialIcons name={icone as any} size={22} color={iconeEditCaixa === icone ? "#FFF" : Cores.textoSecundario} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.modalButtons}>
+                <Button title="Cancelar" color="#999" onPress={() => setModalEditarVisivel(false)} />
+                <Button title="Salvar" color="#2A9D8F" onPress={salvarEdicaoCaixinha} />
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
 
       {/* MODAL CRIAR CAIXINHA */}
       <Modal animationType="slide" transparent visible={modalNovaVisivel} onRequestClose={() => setModalNovaVisivel(false)}>
@@ -319,7 +451,6 @@ export default function CaixinhasScreen() {
                 onChangeText={setMetaValor}
                 keyboardType="numeric"
               />
-
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
               <View style={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (
@@ -330,7 +461,6 @@ export default function CaixinhasScreen() {
                   />
                 ))}
               </View>
-
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -343,7 +473,6 @@ export default function CaixinhasScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-
               <View style={styles.modalButtons}>
                 <Button title="Cancelar" color="#999" onPress={() => setModalNovaVisivel(false)} />
                 <Button title="Criar" color="#2A9D8F" onPress={criarCaixinha} />
@@ -430,7 +559,6 @@ export default function CaixinhasScreen() {
               </View>
             )}
 
-            {/* Filtro de mês */}
             {mesesMovimentos.length > 0 && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
                 <TouchableOpacity
@@ -453,7 +581,6 @@ export default function CaixinhasScreen() {
               </ScrollView>
             )}
 
-            {/* Resumo do filtro */}
             {movimentosFiltrados.length > 0 && (
               <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 12, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 10 }}>
                 <View style={{ alignItems: "center" }}>
@@ -555,4 +682,7 @@ const styles = StyleSheet.create({
   mesFiltro: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginRight: 8 },
   movRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, marginBottom: 8, gap: 10 },
   movIcone: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  opcaoBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 14, borderRadius: 10, marginBottom: 10, gap: 8 },
+  opcaoBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
+  pillFundo: {},
 });

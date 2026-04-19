@@ -18,10 +18,13 @@ interface Transacao {
   tipo: string;
   status: string;
   data_vencimento: string;
+  conta_id: number;
 }
 
 interface Conta {
   id: number;
+  nome: string;
+  cor?: string;
   saldo_inicial: number;
 }
 
@@ -31,8 +34,9 @@ const MESES_FULL = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho
 const getNomeMes = (mes: string) => MESES_FULL[parseInt(mes, 10) - 1];
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const BAR_SECTION_WIDTH = Math.max(72, (SCREEN_WIDTH - 40) / 6);
+const BAR_SECTION_WIDTH = Math.max(60, (SCREEN_WIDTH - 56) / 6);
 const CHART_HEIGHT = 200;
+const BAR_W = BAR_SECTION_WIDTH * 0.28;
 
 export default function RelatoriosScreen() {
   const { isDark, session } = useAppTheme();
@@ -44,154 +48,187 @@ export default function RelatoriosScreen() {
     cardFundo: isDark ? "#1E1E1E" : "#F8F9FA",
     borda: isDark ? "#333333" : "#EEEEEE",
     pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
-    linhaGuia: isDark ? "#2C2C2C" : "#E0E0E0",
+    linhaGuia: isDark ? "#2C2C2C" : "#E8E8E8",
+    linhaBalance: isDark ? "#FFFFFF" : "#2C2C2C",
   };
 
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
+  const [contasSelecionadas, setContasSelecionadas] = useState<number[]>([]);
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
-  const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
-  const [mesSelecionado, setMesSelecionado] = useState<string>(
-    `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
-  );
+  const mesAtualIdx = hoje.getMonth();
 
-  const alterarAno = (direcao: number) => {
-    const novoAno = anoSelecionado + direcao;
-    setAnoSelecionado(novoAno);
-    const mesNum = mesSelecionado.split("-")[1];
-    setMesSelecionado(`${novoAno}-${mesNum}`);
-    setMesProjSelecionado(novoAno === anoAtualNum ? mesAtualIdx : 0);
-  };
+  const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
+  const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
 
   const projScrollRef = useRef<ScrollView>(null);
 
   const carregarDados = async () => {
     if (!session?.user?.id) return;
     try {
-      const resT = await supabase.from("transacoes").select("valor, tipo, status, data_vencimento");
+      const resT = await supabase
+        .from("transacoes")
+        .select("valor, tipo, status, data_vencimento, conta_id");
       if (resT.data) setTransacoes(resT.data);
-    } catch (error) { console.error(error); }
+    } catch (e) { console.error(e); }
     try {
-      const resC = await supabase.from("contas").select("id, saldo_inicial");
+      const resC = await supabase
+        .from("contas")
+        .select("id, nome, cor, saldo_inicial");
       if (resC.data) setContas(resC.data);
-    } catch (error) { console.error(error); }
+    } catch (e) { console.error(e); }
   };
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
 
-  // Resumo do mês selecionado (apenas pagas)
-  const transacoesDoMes = transacoes.filter((t) => {
-    const dataSegura = t.data_vencimento || new Date().toISOString().split("T")[0];
-    return dataSegura.startsWith(mesSelecionado) && t.status === "paga";
-  });
+  const toggleConta = (id: number) => {
+    setContasSelecionadas(prev =>
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
 
-  const totalReceitas = transacoesDoMes.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + Number(curr.valor), 0);
-  const totalDespesas = transacoesDoMes.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + Number(curr.valor), 0);
-  const saldoFinal = totalReceitas - totalDespesas;
+  const alterarAno = (dir: number) => {
+    const novoAno = anoSelecionado + dir;
+    setAnoSelecionado(novoAno);
+    setMesProjSelecionado(novoAno === anoAtualNum ? mesAtualIdx : 0);
+  };
 
-  const mesAtualIdx = hoje.getMonth();
+  // Filtered data based on account selection
+  const transacoesFiltradas = contasSelecionadas.length === 0
+    ? transacoes
+    : transacoes.filter(t => contasSelecionadas.includes(t.conta_id));
 
-  const mesesDoAno = Array.from({ length: 12 }, (_, i) => `${anoSelecionado}-${String(i + 1).padStart(2, "0")}`);
+  const contasFiltradas = contasSelecionadas.length === 0
+    ? contas
+    : contas.filter(c => contasSelecionadas.includes(c.id));
 
-  // Saldo global acumulado até hoje (baseado em todas as transações pagas)
-  const saldoInicialTotal = contas.reduce((acc, c) => acc + Number(c.saldo_inicial), 0);
-  const receitasRealizadas = transacoes.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
-  const despesasRealizadas = transacoes.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
+  const saldoInicialTotal = contasFiltradas.reduce((acc, c) => acc + Number(c.saldo_inicial), 0);
+
+  const receitasRealizadas = transacoesFiltradas
+    .filter(t => t.tipo === "receita" && t.status === "paga")
+    .reduce((acc, t) => acc + Number(t.valor), 0);
+  const despesasRealizadas = transacoesFiltradas
+    .filter(t => t.tipo === "despesa" && t.status === "paga")
+    .reduce((acc, t) => acc + Number(t.valor), 0);
   const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
 
-  // Projeção para o ano selecionado
-  interface MesProjecao {
-    mesIdx: number;
-    label: string;
-    isAtual: boolean;
-    receitasRealizadasMes: number;
-    despesasRealizadasMes: number;
-    receitasPrevistasMes: number;
-    despesasPrevistasMes: number;
-    saldoAcumulado: number;
-  }
-
-  const projecao: MesProjecao[] = [];
-  let saldoAcumulado = saldoAtualGlobal;
-
-  // Para anos passados, calcular com base nas transações reais
-  // Para o ano atual, projetar a partir do mês atual
   const isAnoAtual = anoSelecionado === anoAtualNum;
-  const mesInicio = isAnoAtual ? mesAtualIdx : 0;
-  const mesFim = 11;
 
-  // Calcular saldo acumulado até o início da projeção para anos futuros/passados
-  if (!isAnoAtual) {
-    // Para ano diferente, recalcular com base nas transações do ano
-    saldoAcumulado = saldoInicialTotal;
-    // Somar todas as transações pagas ANTES do ano selecionado
-    transacoes
-      .filter((t) => t.status === "paga" && (t.data_vencimento || "").substring(0, 4) < String(anoSelecionado))
-      .forEach((t) => { saldoAcumulado += t.tipo === "receita" ? Number(t.valor) : -Number(t.valor); });
-  }
-
-  for (let m = mesInicio; m <= mesFim; m++) {
+  // All 12 months bar data (paid transactions)
+  const todosOsMeses = Array.from({ length: 12 }, (_, m) => {
     const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
-    const isAtual = isAnoAtual && m === mesAtualIdx;
-
-    const transDoMes = transacoes.filter((t) => (t.data_vencimento || "").startsWith(yyyymm));
-    const recPagas = transDoMes.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
-    const despPagas = transDoMes.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
-    const recPendentes = transDoMes.filter((t) => t.tipo === "receita" && t.status !== "paga").reduce((acc, t) => acc + Number(t.valor), 0);
-    const despPendentes = transDoMes.filter((t) => t.tipo === "despesa" && t.status !== "paga").reduce((acc, t) => acc + Number(t.valor), 0);
-
-    if (isAtual) {
-      saldoAcumulado = saldoAtualGlobal + recPendentes - despPendentes;
-    } else if (isAnoAtual && m < mesAtualIdx) {
-      // Meses passados do ano atual — já incluídos no saldoAtualGlobal
-      saldoAcumulado = saldoAtualGlobal;
-    } else {
-      saldoAcumulado += recPagas + recPendentes - despPagas - despPendentes;
-    }
-
-    projecao.push({
+    const trans = transacoesFiltradas.filter(t => (t.data_vencimento || "").startsWith(yyyymm));
+    return {
       mesIdx: m,
       label: MESES_ABREV[m],
-      isAtual,
-      receitasRealizadasMes: recPagas,
-      despesasRealizadasMes: despPagas,
-      receitasPrevistasMes: recPendentes,
-      despesasPrevistasMes: despPendentes,
-      saldoAcumulado,
-    });
+      isAtual: isAnoAtual && m === mesAtualIdx,
+      recPagas: trans.filter(t => t.tipo === "receita" && t.status === "paga").reduce((a, t) => a + Number(t.valor), 0),
+      despPagas: trans.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((a, t) => a + Number(t.valor), 0),
+      recPendentes: trans.filter(t => t.tipo === "receita" && t.status !== "paga").reduce((a, t) => a + Number(t.valor), 0),
+      despPendentes: trans.filter(t => t.tipo === "despesa" && t.status !== "paga").reduce((a, t) => a + Number(t.valor), 0),
+    };
+  });
+
+  // Balance line: projecao from start of year (or current month for current year)
+  interface MesProj {
+    mesIdx: number;
+    saldo: number;
+    isFuture: boolean;
   }
 
-  const saldos = projecao.map((p) => p.saldoAcumulado);
-  const saldoMax = Math.max(...saldos, saldoAtualGlobal, 0);
-  const saldoMin = Math.min(...saldos, saldoAtualGlobal, 0);
-  const range = saldoMax - saldoMin || 1;
+  const projecaoSaldo: MesProj[] = [];
+  let saldoAcc = saldoAtualGlobal;
 
-  const getY = (valor: number) => CHART_HEIGHT - ((valor - saldoMin) / range) * CHART_HEIGHT;
+  if (!isAnoAtual) {
+    saldoAcc = saldoInicialTotal;
+    transacoesFiltradas
+      .filter(t => t.status === "paga" && (t.data_vencimento || "").substring(0, 4) < String(anoSelecionado))
+      .forEach(t => { saldoAcc += t.tipo === "receita" ? Number(t.valor) : -Number(t.valor); });
+  }
+
+  for (let m = 0; m <= 11; m++) {
+    const mes = todosOsMeses[m];
+    if (isAnoAtual && m < mesAtualIdx) {
+      // Past months of current year — saldo not tracked per-month, skip balance line
+      continue;
+    }
+    if (isAnoAtual && m === mesAtualIdx) {
+      projecaoSaldo.push({ mesIdx: m, saldo: saldoAtualGlobal, isFuture: false });
+      saldoAcc = saldoAtualGlobal + mes.recPendentes - mes.despPendentes;
+    } else {
+      saldoAcc += mes.recPagas + mes.recPendentes - mes.despPagas - mes.despPendentes;
+      projecaoSaldo.push({ mesIdx: m, saldo: saldoAcc, isFuture: true });
+    }
+  }
+
+  // Chart Y scale (bars + balance line share same axis)
+  const barMaxes = todosOsMeses.map(m => Math.max(m.recPagas, m.despPagas));
+  const balanceSaldos = projecaoSaldo.map(p => p.saldo);
+  const chartMax = Math.max(...barMaxes, ...balanceSaldos, saldoAtualGlobal, 0);
+  const chartMin = Math.min(...balanceSaldos, saldoAtualGlobal, 0);
+  const chartRange = chartMax - chartMin || 1;
+
+  const getY = (val: number) => CHART_HEIGHT - ((val - chartMin) / chartRange) * CHART_HEIGHT;
+  const getBarH = (val: number) => Math.max(0, (val / chartRange) * CHART_HEIGHT);
   const zeroY = getY(0);
 
-  const pontos = [
-    { x: BAR_SECTION_WIDTH / 2, y: getY(saldoAtualGlobal) },
-    ...projecao.map((p, i) => ({ x: BAR_SECTION_WIDTH * i + BAR_SECTION_WIDTH / 2, y: getY(p.saldoAcumulado) })),
-  ];
+  // Build balance line points (absolute X positions)
+  const balancePoints = projecaoSaldo.map(p => ({
+    x: BAR_SECTION_WIDTH * p.mesIdx + BAR_SECTION_WIDTH / 2,
+    y: getY(p.saldo),
+    isFuture: p.isFuture,
+    mesIdx: p.mesIdx,
+  }));
 
-  const formatVal = (v: number) => Math.abs(v) >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${v.toFixed(0)}`;
+  const formatVal = (v: number) =>
+    Math.abs(v) >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${v.toFixed(0)}`;
 
-  const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
-  const projDetalhe = projecao.find((p) => p.mesIdx === mesProjSelecionado) ?? projecao[0];
+  const mesDetalhe = todosOsMeses[mesProjSelecionado];
+  const saldoDetalhe = projecaoSaldo.find(p => p.mesIdx === mesProjSelecionado);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: Cores.fundo }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Fluxo de Caixa</Text>
         <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
-          Análise de {getNomeMes(mesSelecionado.split("-")[1])} {anoSelecionado}
+          {getNomeMes(String(mesProjSelecionado + 1).padStart(2, "0"))} {anoSelecionado}
         </Text>
       </View>
 
-      {/* NAVEGADOR DE ANO */}
-      <View style={[styles.anoNavBar, { backgroundColor: Cores.pillFundo }]}>
+      {/* ACCOUNT FILTER */}
+      {contas.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.contasFiltroScroll}
+          contentContainerStyle={{ paddingHorizontal: 15, gap: 8, paddingBottom: 8 }}
+        >
+          {contas.map(conta => {
+            const sel = contasSelecionadas.includes(conta.id);
+            const cor = conta.cor || "#2A9D8F";
+            return (
+              <TouchableOpacity
+                key={conta.id}
+                onPress={() => toggleConta(conta.id)}
+                style={[
+                  styles.contaChip,
+                  { backgroundColor: sel ? cor : Cores.pillFundo, borderColor: sel ? cor : Cores.borda },
+                ]}
+              >
+                <View style={[styles.contaChipDot, { backgroundColor: sel ? "#fff" : cor }]} />
+                <Text style={[styles.contaChipText, { color: sel ? "#fff" : Cores.textoSecundario }]}>
+                  {conta.nome}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* YEAR NAV */}
+      <View style={[styles.anoNav, { backgroundColor: Cores.pillFundo }]}>
         <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.anoNavBtn}>
           <MaterialIcons name="chevron-left" size={28} color={Cores.textoPrincipal} />
         </TouchableOpacity>
@@ -201,140 +238,273 @@ export default function RelatoriosScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* SELETOR DE MÊS */}
-      <View style={styles.mesesScrollContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
-          {mesesDoAno.map((yyyymm) => {
-            const isAtivo = mesSelecionado === yyyymm;
-            return (
-              <TouchableOpacity
-                key={yyyymm}
-                style={[styles.mesPill, { backgroundColor: isAtivo ? Cores.textoPrincipal : Cores.pillFundo, borderColor: isAtivo ? Cores.textoPrincipal : Cores.borda }]}
-                onPress={() => setMesSelecionado(yyyymm)}
-              >
-                <Text style={[styles.mesPillText, { color: isAtivo ? Cores.fundo : Cores.textoSecundario }]}>
-                  {getNomeMes(yyyymm.split("-")[1])}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Resumo do mês */}
-        <View style={[styles.summaryCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <View style={styles.iconCircle}><MaterialIcons name="arrow-upward" size={20} color="#2A9D8F" /></View>
-              <Text style={[styles.summaryLabel, { color: Cores.textoSecundario }]}>Receitas</Text>
-              <Text style={[styles.summaryValue, { color: "#2A9D8F" }]}>R$ {totalReceitas.toFixed(2)}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.summaryItem}>
-              <View style={styles.iconCircle}><MaterialIcons name="arrow-downward" size={20} color="#E76F51" /></View>
-              <Text style={[styles.summaryLabel, { color: Cores.textoSecundario }]}>Despesas</Text>
-              <Text style={[styles.summaryValue, { color: "#E76F51" }]}>R$ {totalDespesas.toFixed(2)}</Text>
-            </View>
-          </View>
-          <View style={[styles.resultBox, { backgroundColor: isDark ? "#2C2C2C" : "#EEEEEE" }]}>
-            <Text style={[styles.resultLabel, { color: Cores.textoSecundario }]}>Saldo do Mês</Text>
-            <Text style={[styles.resultAmount, { color: saldoFinal >= 0 ? "#2A9D8F" : "#E76F51" }]}>
-              {saldoFinal >= 0 ? "+" : "-"} R$ {Math.abs(saldoFinal).toFixed(2)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Gráfico de projeção */}
+        {/* COMBINED BAR + LINE CHART */}
         <View style={[styles.chartCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
           <View style={styles.chartHeader}>
-            <MaterialIcons name="show-chart" size={18} color="#2A9D8F" />
+            <MaterialIcons name="bar-chart" size={18} color="#2A9D8F" />
             <Text style={[styles.chartTitle, { color: Cores.textoPrincipal }]}>
-              Projeção de Saldo — {anoSelecionado}
+              Receitas & Despesas — {anoSelecionado}
             </Text>
           </View>
-          <Text style={[styles.chartSubtitle, { color: Cores.textoSecundario }]}>
-            Toque em um mês para ver o detalhamento
+
+          {/* Legend */}
+          <View style={styles.legendaRow}>
+            <View style={styles.legendaItem}>
+              <View style={[styles.legendaDot, { backgroundColor: "#2A9D8F" }]} />
+              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Recebido</Text>
+            </View>
+            <View style={styles.legendaItem}>
+              <View style={[styles.legendaDot, { backgroundColor: "#E76F51" }]} />
+              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Pago</Text>
+            </View>
+            <View style={styles.legendaItem}>
+              <View style={[styles.legendaLinha, { backgroundColor: Cores.linhaBalance }]} />
+              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Saldo atual</Text>
+            </View>
+            <View style={styles.legendaItem}>
+              <View style={[styles.legendaLinha, { backgroundColor: "#888" }]} />
+              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Projetado</Text>
+            </View>
+          </View>
+
+          <Text style={[styles.chartHint, { color: Cores.textoSecundario }]}>
+            Toque em um mês para detalhes
           </Text>
 
-          {projecao.length === 0 ? (
-            <View style={{ alignItems: "center", paddingVertical: 30 }}>
-              <Text style={{ color: Cores.textoSecundario, fontStyle: "italic" }}>Sem dados para projeção.</Text>
+          <ScrollView
+            ref={projScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: 12 }}
+            contentContainerStyle={{ paddingHorizontal: 4 }}
+          >
+            <View style={{ width: BAR_SECTION_WIDTH * 12, height: CHART_HEIGHT + 30 }}>
+              {/* Guide lines */}
+              {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+                const y = getY(chartMin + frac * chartRange);
+                return (
+                  <View key={frac} style={{ position: "absolute", top: y, left: 0, right: 0, height: 1, backgroundColor: Cores.linhaGuia }} />
+                );
+              })}
+
+              {/* Zero line (only if chart goes negative) */}
+              {chartMin < 0 && (
+                <View style={{ position: "absolute", top: zeroY, left: 0, right: 0, height: 1.5, backgroundColor: "#E76F51", opacity: 0.35 }} />
+              )}
+
+              {/* Bars for all 12 months */}
+              {todosOsMeses.map((mes, i) => {
+                const incH = getBarH(mes.recPagas);
+                const expH = getBarH(mes.despPagas);
+                const barLeftX = BAR_SECTION_WIDTH * i + (BAR_SECTION_WIDTH / 2 - BAR_W - 1.5);
+                const barRightX = BAR_SECTION_WIDTH * i + BAR_SECTION_WIDTH / 2 + 1.5;
+
+                return (
+                  <View key={i}>
+                    {incH > 0 && (
+                      <View style={{
+                        position: "absolute",
+                        left: barLeftX,
+                        top: zeroY - incH,
+                        width: BAR_W,
+                        height: incH,
+                        backgroundColor: "#2A9D8F",
+                        borderTopLeftRadius: 3,
+                        borderTopRightRadius: 3,
+                      }} />
+                    )}
+                    {expH > 0 && (
+                      <View style={{
+                        position: "absolute",
+                        left: barRightX,
+                        top: zeroY - expH,
+                        width: BAR_W,
+                        height: expH,
+                        backgroundColor: "#E76F51",
+                        borderTopLeftRadius: 3,
+                        borderTopRightRadius: 3,
+                      }} />
+                    )}
+                  </View>
+                );
+              })}
+
+              {/* Balance line segments */}
+              {balancePoints.slice(0, -1).map((pt, i) => {
+                const pt2 = balancePoints[i + 1];
+                const dx = pt2.x - pt.x;
+                const dy = pt2.y - pt.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                const lineCor = pt.isFuture ? "#888888" : Cores.linhaBalance;
+                return (
+                  <View key={i} style={{
+                    position: "absolute",
+                    left: pt.x,
+                    top: pt.y,
+                    width: len,
+                    height: 2.5,
+                    backgroundColor: lineCor,
+                    opacity: pt.isFuture ? 0.65 : 1,
+                    transform: [{ rotate: `${angle}deg` }],
+                    transformOrigin: "0 0",
+                  }} />
+                );
+              })}
+
+              {/* Month touch areas + dots + labels */}
+              {todosOsMeses.map((mes, i) => {
+                const isSel = mesProjSelecionado === mes.mesIdx;
+                const balPt = balancePoints.find(p => p.mesIdx === mes.mesIdx);
+                const dotY = balPt ? balPt.y : null;
+                const dotCor = balPt
+                  ? (balPt.isFuture ? "#888888" : Cores.linhaBalance)
+                  : Cores.textoSecundario;
+
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    activeOpacity={0.7}
+                    onPress={() => setMesProjSelecionado(mes.mesIdx)}
+                    style={{
+                      position: "absolute",
+                      left: BAR_SECTION_WIDTH * i,
+                      top: 0,
+                      width: BAR_SECTION_WIDTH,
+                      height: CHART_HEIGHT + 30,
+                      alignItems: "center",
+                    }}
+                  >
+                    {isSel && (
+                      <View style={{
+                        position: "absolute", top: 0, left: 2, right: 2, bottom: 0,
+                        backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
+                        borderRadius: 8,
+                      }} />
+                    )}
+
+                    {/* Balance dot */}
+                    {dotY !== null && (
+                      <>
+                        <View style={{
+                          position: "absolute",
+                          left: BAR_SECTION_WIDTH / 2 - (isSel ? 6 : 4),
+                          top: dotY - (isSel ? 6 : 4),
+                          width: isSel ? 12 : 8,
+                          height: isSel ? 12 : 8,
+                          borderRadius: isSel ? 6 : 4,
+                          backgroundColor: dotCor,
+                          borderWidth: isSel ? 2 : 0,
+                          borderColor: Cores.fundo,
+                          elevation: isSel ? 3 : 0,
+                        }} />
+                        {isSel && (
+                          <View style={{
+                            position: "absolute",
+                            top: dotY < 28 ? dotY + 14 : dotY - 22,
+                            left: BAR_SECTION_WIDTH / 2 - 28,
+                            backgroundColor: dotCor,
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 6,
+                            minWidth: 56,
+                            alignItems: "center",
+                          }}>
+                            <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "bold" }}>
+                              {formatVal(balPt!.isFuture
+                                ? projecaoSaldo.find(p => p.mesIdx === mes.mesIdx)?.saldo ?? 0
+                                : saldoAtualGlobal)}
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    )}
+
+                    <Text style={{
+                      position: "absolute",
+                      bottom: 0,
+                      fontSize: 11,
+                      fontWeight: isSel ? "bold" : "500",
+                      color: isSel ? Cores.textoPrincipal : Cores.textoSecundario,
+                    }}>
+                      {mes.label}{mes.isAtual ? " ●" : ""}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          ) : (
-            <ScrollView ref={projScrollRef} horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ paddingHorizontal: 8 }}>
-              <View style={{ width: BAR_SECTION_WIDTH * projecao.length, height: CHART_HEIGHT + 30 }}>
-                {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-                  const val = saldoMin + frac * range;
-                  const y = getY(val);
-                  return <View key={frac} style={{ position: "absolute", top: y, left: 0, right: 0, height: 1, backgroundColor: Cores.linhaGuia }} />;
-                })}
+          </ScrollView>
 
-                {saldoMin < 0 && (
-                  <View style={{ position: "absolute", top: zeroY, left: 0, right: 0, height: 1.5, backgroundColor: "#E76F51", opacity: 0.5 }} />
-                )}
-
-                {pontos.slice(0, -1).map((p, i) => {
-                  const p2 = pontos[i + 1];
-                  const dx = p2.x - p.x;
-                  const dy = p2.y - p.y;
-                  const length = Math.sqrt(dx * dx + dy * dy);
-                  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                  const isFuture = projecao[i] && !projecao[i].isAtual;
-                  return (
-                    <View key={i} style={{ position: "absolute", left: p.x, top: p.y, width: length, height: 2, backgroundColor: isFuture ? "#457B9D" : "#2A9D8F", opacity: isFuture ? 0.6 : 1, transform: [{ rotate: `${angle}deg` }], transformOrigin: "0 0" }} />
-                  );
-                })}
-
-                {projecao.map((p, i) => {
-                  const py = pontos[i + 1]?.y ?? getY(p.saldoAcumulado);
-                  const isSelected = mesProjSelecionado === p.mesIdx;
-                  const cor = p.saldoAcumulado >= 0 ? "#2A9D8F" : "#E76F51";
-                  return (
-                    <TouchableOpacity key={p.mesIdx} activeOpacity={0.7} onPress={() => setMesProjSelecionado(p.mesIdx)}
-                      style={{ position: "absolute", left: BAR_SECTION_WIDTH * i, top: 0, width: BAR_SECTION_WIDTH, height: CHART_HEIGHT + 30, alignItems: "center" }}>
-                      {isSelected && (
-                        <View style={{ position: "absolute", top: 0, left: 4, right: 4, bottom: 0, backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)", borderRadius: 8 }} />
-                      )}
-                      <View style={{ position: "absolute", top: py - (isSelected ? 7 : 5), width: isSelected ? 14 : 10, height: isSelected ? 14 : 10, borderRadius: isSelected ? 7 : 5, backgroundColor: cor, borderWidth: isSelected ? 2 : 0, borderColor: Cores.fundo, elevation: isSelected ? 3 : 0 }} />
-                      {isSelected && (
-                        <View style={{ position: "absolute", top: py < 30 ? py + 14 : py - 24, backgroundColor: cor, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
-                          <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "bold" }}>{formatVal(p.saldoAcumulado)}</Text>
-                        </View>
-                      )}
-                      <Text style={{ position: "absolute", bottom: 0, fontSize: 11, fontWeight: isSelected ? "bold" : "500", color: isSelected ? Cores.textoPrincipal : Cores.textoSecundario }}>
-                        {p.label}{p.isAtual ? " ●" : ""}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          )}
-
-          {projDetalhe && (
-            <View style={[styles.detalheBox, { borderColor: Cores.borda, backgroundColor: isDark ? "#242424" : "#F8F9FA" }]}>
-              <Text style={[styles.detalhetitulo, { color: Cores.textoPrincipal }]}>
-                {MESES_ABREV[projDetalhe.mesIdx]} {anoSelecionado}{projDetalhe.isAtual ? "  •  Mês atual" : ""}
+          {/* Detail box */}
+          {mesDetalhe && (
+            <View style={[styles.detalheBox, { borderColor: Cores.borda, backgroundColor: isDark ? "#242424" : "#F0F0F0" }]}>
+              <Text style={[styles.detalheTitulo, { color: Cores.textoPrincipal }]}>
+                {MESES_ABREV[mesDetalhe.mesIdx]} {anoSelecionado}
+                {mesDetalhe.isAtual ? "  •  Mês atual" : ""}
               </Text>
 
-              {projDetalhe.isAtual ? (
+              <DetalheRow
+                label="Recebido"
+                valor={`+ R$ ${mesDetalhe.recPagas.toFixed(2)}`}
+                cor="#2A9D8F"
+                dotCor="#2A9D8F"
+                cores={Cores}
+              />
+              <DetalheRow
+                label="Pago"
+                valor={`- R$ ${mesDetalhe.despPagas.toFixed(2)}`}
+                cor="#E76F51"
+                dotCor="#E76F51"
+                cores={Cores}
+              />
+
+              {(mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0) && (
                 <>
-                  <DetalheRow label="Recebido" valor={`+ R$ ${projDetalhe.receitasRealizadasMes.toFixed(2)}`} cor="#2A9D8F" dotCor="#2A9D8F" cores={Cores} />
-                  <DetalheRow label="Pago" valor={`- R$ ${projDetalhe.despesasRealizadasMes.toFixed(2)}`} cor="#E76F51" dotCor="#E76F51" cores={Cores} />
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
-                  <DetalheRow label="A receber" valor={`+ R$ ${projDetalhe.receitasPrevistasMes.toFixed(2)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
-                  <DetalheRow label="A pagar" valor={`- R$ ${projDetalhe.despesasPrevistasMes.toFixed(2)}`} cor="#E9C46A" dotCor="#E9C46A" cores={Cores} />
-                  <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
-                  <DetalheRow label="Saldo atual" valor={`R$ ${saldoAtualGlobal.toFixed(2)}`} cor={saldoAtualGlobal >= 0 ? "#2A9D8F" : "#E76F51"} isIcon cores={Cores} />
-                  <DetalheRow label="Saldo previsto" valor={`R$ ${projDetalhe.saldoAcumulado.toFixed(2)}`} cor={projDetalhe.saldoAcumulado >= 0 ? "#2A9D8F" : "#E76F51"} isIcon cores={Cores} bold />
+                  {mesDetalhe.recPendentes > 0 && (
+                    <DetalheRow
+                      label="A receber"
+                      valor={`+ R$ ${mesDetalhe.recPendentes.toFixed(2)}`}
+                      cor="#457B9D"
+                      dotCor="#457B9D"
+                      cores={Cores}
+                    />
+                  )}
+                  {mesDetalhe.despPendentes > 0 && (
+                    <DetalheRow
+                      label="A pagar"
+                      valor={`- R$ ${mesDetalhe.despPendentes.toFixed(2)}`}
+                      cor="#E9C46A"
+                      dotCor="#E9C46A"
+                      cores={Cores}
+                    />
+                  )}
                 </>
-              ) : (
+              )}
+
+              {saldoDetalhe && (
                 <>
-                  <DetalheRow label="A receber" valor={`+ R$ ${projDetalhe.receitasPrevistasMes.toFixed(2)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
-                  <DetalheRow label="A pagar" valor={`- R$ ${projDetalhe.despesasPrevistasMes.toFixed(2)}`} cor="#E9C46A" dotCor="#E9C46A" cores={Cores} />
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
-                  <DetalheRow label="Saldo previsto" valor={`R$ ${projDetalhe.saldoAcumulado.toFixed(2)}`} cor={projDetalhe.saldoAcumulado >= 0 ? "#2A9D8F" : "#E76F51"} isIcon cores={Cores} bold />
+                  {mesDetalhe.isAtual && (
+                    <DetalheRow
+                      label="Saldo atual"
+                      valor={`R$ ${saldoAtualGlobal.toFixed(2)}`}
+                      cor={saldoAtualGlobal >= 0 ? "#2A9D8F" : "#E76F51"}
+                      isIcon
+                      iconName="account-balance-wallet"
+                      cores={Cores}
+                    />
+                  )}
+                  <DetalheRow
+                    label={saldoDetalhe.isFuture ? "Saldo previsto" : "Saldo atual"}
+                    valor={`R$ ${saldoDetalhe.saldo.toFixed(2)}`}
+                    cor={saldoDetalhe.saldo >= 0 ? "#2A9D8F" : "#E76F51"}
+                    isIcon
+                    iconName="trending-up"
+                    cores={Cores}
+                    bold
+                  />
                 </>
               )}
             </View>
@@ -347,14 +517,25 @@ export default function RelatoriosScreen() {
   );
 }
 
-// Componente auxiliar para linha do detalhe
-function DetalheRow({ label, valor, cor, dotCor, isIcon, bold, cores }: {
-  label: string; valor: string; cor: string; dotCor?: string; isIcon?: boolean; bold?: boolean; cores: any;
+function DetalheRow({ label, valor, cor, dotCor, isIcon, iconName, bold, cores }: {
+  label: string;
+  valor: string;
+  cor: string;
+  dotCor?: string;
+  isIcon?: boolean;
+  iconName?: string;
+  bold?: boolean;
+  cores: any;
 }) {
   return (
     <View style={styles.detalheRow}>
       {isIcon ? (
-        <MaterialIcons name={label === "Saldo atual" ? "account-balance-wallet" : "trending-up"} size={12} color={cores.textoSecundario} style={{ marginRight: 8 }} />
+        <MaterialIcons
+          name={(iconName as any) ?? "trending-up"}
+          size={12}
+          color={cores.textoSecundario}
+          style={{ marginRight: 8 }}
+        />
       ) : (
         <View style={[styles.detalheDot, { backgroundColor: dotCor }]} />
       )}
@@ -365,41 +546,54 @@ function DetalheRow({ label, valor, cor, dotCor, isIcon, bold, cores }: {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
+  safe: { flex: 1 },
   header: { padding: 20, paddingTop: 30, paddingBottom: 10 },
   title: { fontSize: 24, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 4 },
 
-  anoNavBar: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginHorizontal: 15, marginBottom: 8, borderRadius: 12, paddingVertical: 4 },
+  contasFiltroScroll: { marginBottom: 8 },
+  contaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  contaChipDot: { width: 8, height: 8, borderRadius: 4 },
+  contaChipText: { fontSize: 13, fontWeight: "600" },
+
+  anoNav: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 15,
+    marginBottom: 12,
+    borderRadius: 12,
+    paddingVertical: 4,
+  },
   anoNavBtn: { padding: 8 },
   anoNavText: { fontSize: 18, fontWeight: "bold", minWidth: 60, textAlign: "center" },
 
-  mesesScrollContainer: { marginBottom: 15 },
-  mesPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, borderWidth: 1 },
-  mesPillText: { fontSize: 13, fontWeight: "600", textTransform: "capitalize" },
-
   content: { flex: 1, paddingHorizontal: 20 },
-  summaryCard: { padding: 20, borderRadius: 16, borderWidth: 1, elevation: 2, marginBottom: 20 },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  summaryItem: { flex: 1, alignItems: "center" },
-  divider: { width: 1, height: "80%", backgroundColor: "#DDD", marginHorizontal: 10 },
-  iconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.05)", alignItems: "center", justifyContent: "center", marginBottom: 8 },
-  summaryLabel: { fontSize: 14, fontWeight: "500", marginBottom: 4 },
-  summaryValue: { fontSize: 18, fontWeight: "bold" },
-  resultBox: { alignItems: "center", padding: 15, borderRadius: 12 },
-  resultLabel: { fontSize: 14, fontWeight: "600", textTransform: "uppercase", marginBottom: 5 },
-  resultAmount: { fontSize: 28, fontWeight: "bold" },
 
-  chartCard: { padding: 20, borderRadius: 16, borderWidth: 1, elevation: 2, marginBottom: 20 },
+  chartCard: { padding: 16, borderRadius: 16, borderWidth: 1, elevation: 2, marginBottom: 20 },
   chartHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  chartTitle: { fontSize: 16, fontWeight: "bold" },
-  chartSubtitle: { fontSize: 12, marginTop: 4 },
+  chartTitle: { fontSize: 16, fontWeight: "bold", flex: 1 },
+  chartHint: { fontSize: 11, marginTop: 4 },
 
-  detalheBox: { marginTop: 16, borderRadius: 12, borderWidth: 1, padding: 14 },
-  detalhetitulo: { fontSize: 13, fontWeight: "bold", marginBottom: 10 },
+  legendaRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 },
+  legendaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendaDot: { width: 10, height: 10, borderRadius: 5 },
+  legendaLinha: { width: 16, height: 2.5, borderRadius: 1.5 },
+  legendaTxt: { fontSize: 11 },
+
+  detalheBox: { marginTop: 14, borderRadius: 12, borderWidth: 1, padding: 14 },
+  detalheTitulo: { fontSize: 13, fontWeight: "bold", marginBottom: 10 },
   detalheRow: { flexDirection: "row", alignItems: "center", marginBottom: 7 },
   detalheDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   detalheLabel: { flex: 1, fontSize: 13 },
   detalheVal: { fontSize: 13, fontWeight: "600" },
-  detalheSep: { height: 1, marginVertical: 8 },
+  detalheSep: { height: 1, marginVertical: 7 },
 });

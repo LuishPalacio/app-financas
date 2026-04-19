@@ -171,14 +171,18 @@ export default function TransacoesScreen() {
   const transacoesDoMes = transacoes
     .filter((t) => {
       const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
-      const passaCategoria = filtroCategorias.length === 0 || (t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
       const dataSegura = t.data_vencimento || new Date().toISOString().split("T")[0];
       const passaMes = dataSegura.startsWith(mesSelecionado);
       const isTransferencia = t.descricao.includes("[Transf.]");
+      // Filtro de categoria: transferências não têm categoria, nunca são filtradas por ela
+      const passaCategoria = filtroCategorias.length === 0
+        || isTransferencia
+        || (t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
       let passaTipo = true;
       if (filtroTipo === "transferencia") passaTipo = isTransferencia;
       else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !isTransferencia;
       else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !isTransferencia;
+      // "todas" = passaTipo permanece true → exibe receitas, despesas e transferências
       return passaConta && passaCategoria && passaMes && passaTipo;
     })
     .sort((a, b) => (b.data_vencimento || "").localeCompare(a.data_vencimento || ""));
