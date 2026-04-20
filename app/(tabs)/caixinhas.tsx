@@ -381,8 +381,8 @@ export default function CaixinhasScreen() {
       {/* MODAL EDITAR CAIXINHA */}
       <Modal animationType="slide" transparent visible={modalEditarVisivel} onRequestClose={() => setModalEditarVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={{ justifyContent: "center", alignItems: "center", flexGrow: 1, paddingVertical: 20 }}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Editar Objetivo</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
@@ -425,16 +425,16 @@ export default function CaixinhasScreen() {
                 <Button title="Cancelar" color="#999" onPress={() => setModalEditarVisivel(false)} />
                 <Button title="Salvar" color="#2A9D8F" onPress={salvarEdicaoCaixinha} />
               </View>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
       {/* MODAL CRIAR CAIXINHA */}
       <Modal animationType="slide" transparent visible={modalNovaVisivel} onRequestClose={() => setModalNovaVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={{ justifyContent: "center", alignItems: "center", flexGrow: 1, paddingVertical: 20 }}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Novo Objetivo</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
@@ -477,8 +477,8 @@ export default function CaixinhasScreen() {
                 <Button title="Cancelar" color="#999" onPress={() => setModalNovaVisivel(false)} />
                 <Button title="Criar" color="#2A9D8F" onPress={criarCaixinha} />
               </View>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
