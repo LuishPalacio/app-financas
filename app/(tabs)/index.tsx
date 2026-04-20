@@ -1140,23 +1140,23 @@ export default function Dashboard() {
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Transação</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 <TouchableOpacity style={[styles.typeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>
-                  <Text style={[styles.typeButtonText, tipoTransacao === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesa</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesa</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.typeButton, tipoTransacao === "receita" && styles.incomeSelected]} onPress={() => { setTipoTransacao("receita"); setCatSelecionadaId(null); }}>
-                  <Text style={[styles.typeButtonText, tipoTransacao === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receita</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receita</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.typeButton, tipoTransacao === "transferencia" && styles.transferSelected]} onPress={() => setTipoTransacao("transferencia")}>
-                  <Text style={[styles.typeButtonText, tipoTransacao === "transferencia" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Transf.</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "transferencia" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Transferência</Text>
                 </TouchableOpacity>
               </View>
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
-                  <Text style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
-                  <Text style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -1164,7 +1164,7 @@ export default function Dashboard() {
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 {(["unica", "parcelada", "fixa"] as const).map((freq) => (
                   <TouchableOpacity key={freq} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequencia === freq && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFrequencia(freq)}>
-                    <Text style={[styles.freqButtonText, frequencia === freq ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>
+                    <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, frequencia === freq ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>
                       {freq === "unica" ? "Única" : freq === "parcelada" ? "Parcelada" : "Fixa Mensal"}
                     </Text>
                   </TouchableOpacity>
@@ -1285,12 +1285,12 @@ const styles = StyleSheet.create({
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
   typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
-  typeButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 2, alignItems: "center", justifyContent: "center" },
-  typeButtonText: { fontWeight: "bold", fontSize: 13, textAlign: "center" },
+  typeButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, alignItems: "center", justifyContent: "center" },
+  typeButtonText: { fontWeight: "bold", fontSize: 14, textAlign: "center" },
   expenseSelected: { backgroundColor: "#E76F51" },
   incomeSelected: { backgroundColor: "#2A9D8F" },
   transferSelected: { backgroundColor: "#457B9D" },
-  freqButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  freqButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   freqButtonText: { fontSize: 12, fontWeight: "600", textAlign: "center" },
   catScroll: { flexDirection: "row", marginBottom: 15 },
   catPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, marginRight: 10 },
