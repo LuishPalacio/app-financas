@@ -1223,7 +1223,7 @@ export default function Dashboard() {
 
               <View style={styles.modalButtons}>
                 <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} />
-                <Button title="Guardar" color={isDark ? "#FFF" : "#1A1A1A"} onPress={salvarTransacao} />
+                <Button title="Guardar" color="#2A9D8F" onPress={salvarTransacao} />
               </View>
             </View>
           </ScrollView>
@@ -1285,13 +1285,13 @@ const styles = StyleSheet.create({
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
   typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
-  typeButton: { flex: 1, padding: 12, alignItems: "center" },
-  typeButtonText: { fontWeight: "bold" },
+  typeButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  typeButtonText: { fontWeight: "bold", fontSize: 13, textAlign: "center" },
   expenseSelected: { backgroundColor: "#E76F51" },
   incomeSelected: { backgroundColor: "#2A9D8F" },
   transferSelected: { backgroundColor: "#457B9D" },
-  freqButton: { flex: 1, padding: 10, alignItems: "center" },
-  freqButtonText: { fontSize: 13, fontWeight: "600" },
+  freqButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  freqButtonText: { fontSize: 12, fontWeight: "600", textAlign: "center" },
   catScroll: { flexDirection: "row", marginBottom: 15 },
   catPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, marginRight: 10 },
   colorDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
