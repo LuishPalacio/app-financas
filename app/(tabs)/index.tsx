@@ -1135,8 +1135,8 @@ export default function Dashboard() {
       {/* MODAL NOVA TRANSAÇÃO */}
       <Modal animationType="slide" transparent visible={modalTransVisivel} onRequestClose={() => setModalTransVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.scrollModalContent}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, minHeight: 520 }]}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Transação</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 <TouchableOpacity style={[styles.typeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>
@@ -1225,8 +1225,8 @@ export default function Dashboard() {
                 <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} />
                 <Button title="Guardar" color="#2A9D8F" onPress={salvarTransacao} />
               </View>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1273,8 +1273,7 @@ const styles = StyleSheet.create({
   graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
-  scrollModalContent: { flexGrow: 1, justifyContent: "center", alignItems: "center", paddingVertical: 20 },
-  modalContent: { width: "95%", padding: 20, borderRadius: 16, elevation: 5 },
+modalContent: { width: "95%", padding: 20, borderRadius: 16, elevation: 5 },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 15 },
   datePickerText: { fontSize: 16, fontWeight: "500" },
