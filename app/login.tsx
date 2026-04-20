@@ -128,7 +128,7 @@ export default function LoginScreen() {
             />
           </View>
 
-          <Text style={styles.title}>LHS Finanças</Text>
+          <Text style={styles.title}>FinFlow</Text>
           <Text style={styles.subtitle}>
             {isRecuperandoSenha
               ? "Recuperação de Acesso"

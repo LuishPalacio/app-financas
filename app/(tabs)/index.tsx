@@ -34,6 +34,7 @@ interface Conta {
   saldo_inicial: number;
   compartilhado: boolean;
   cor?: string;
+  arquivado?: boolean;
 }
 interface Transacao {
   id: number;
@@ -100,82 +101,40 @@ const mesesEmPortugues = [
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
 ];
 
-// Gráfico de pizza simples usando Views
-const PieChart = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string }[]; total: number; isDark: boolean }) => {
-  const SIZE = 120;
-  const RADIUS = SIZE / 2;
-  if (total === 0) return (
-    <View style={{ alignItems: "center", justifyContent: "center", height: SIZE }}>
-      <Text style={{ color: isDark ? "#666" : "#CCC", fontSize: 12 }}>Sem dados</Text>
+// Gráfico de barras horizontais por categoria
+const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string }[]; total: number; isDark: boolean }) => {
+  if (total === 0 || dados.length === 0) return (
+    <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 16 }}>
+      <Text style={{ color: isDark ? "#555" : "#CCC", fontSize: 12 }}>Sem dados no período</Text>
     </View>
   );
-
-  // Renderiza fatias usando bordas de View rotacionadas (técnica sem SVG)
-  let cumulativeAngle = 0;
-  const fatias = dados.map((item) => {
-    const angle = (item.valor / total) * 360;
-    const result = { ...item, startAngle: cumulativeAngle, angle };
-    cumulativeAngle += angle;
-    return result;
-  });
-
   return (
-    <View style={{ alignItems: "center" }}>
-      <View style={{ width: SIZE, height: SIZE, borderRadius: RADIUS, overflow: "hidden", position: "relative" }}>
-        {fatias.map((fatia, i) => {
-          return (
-            <View
-              key={i}
-              style={{
-                position: "absolute",
-                width: SIZE,
-                height: SIZE,
-                borderRadius: RADIUS,
-                backgroundColor: fatia.cor,
-                transform: [{ rotate: `${fatia.startAngle}deg` }],
-                // clip usando overflow da fatia via camadas sobrepostas
-              }}
-            />
-          );
-        })}
-        {/* Fundo branco central para efeito donut */}
-        <View style={{
-          position: "absolute",
-          width: SIZE * 0.5,
-          height: SIZE * 0.5,
-          borderRadius: RADIUS * 0.5,
-          backgroundColor: isDark ? "#1E1E1E" : "#FFF",
-          top: SIZE * 0.25,
-          left: SIZE * 0.25,
-          alignItems: "center",
-          justifyContent: "center",
-        }}>
-          <Text style={{ fontSize: 9, fontWeight: "bold", color: isDark ? "#FFF" : "#333" }}>
-            {dados.length} cat.
-          </Text>
-        </View>
-      </View>
+    <View style={{ width: "100%" }}>
+      {dados.slice(0, 6).map((item, i) => {
+        const pct = total > 0 ? (item.valor / total) * 100 : 0;
+        return (
+          <View key={i} style={{ marginBottom: 10 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: item.cor, marginRight: 6 }} />
+                <Text style={{ flex: 1, fontSize: 12, color: isDark ? "#AAA" : "#555" }} numberOfLines={1}>{item.nome}</Text>
+              </View>
+              <Text style={{ fontSize: 12, fontWeight: "bold", color: isDark ? "#FFF" : "#222" }}>
+                {pct.toFixed(0)}%
+              </Text>
+            </View>
+            <View style={{ height: 7, backgroundColor: isDark ? "#2C2C2C" : "#E8E8E8", borderRadius: 4, overflow: "hidden" }}>
+              <View style={{ height: 7, width: `${pct}%`, backgroundColor: item.cor, borderRadius: 4 }} />
+            </View>
+          </View>
+        );
+      })}
+      {dados.length > 6 && (
+        <Text style={{ fontSize: 10, color: isDark ? "#666" : "#AAA", marginTop: 2 }}>+{dados.length - 6} outras categorias</Text>
+      )}
     </View>
   );
 };
-
-// Legenda do gráfico
-const Legenda = ({ dados, total, cores }: { dados: { cor: string; valor: number; nome: string }[]; total: number; cores: any }) => (
-  <View style={{ flex: 1, paddingLeft: 12 }}>
-    {dados.slice(0, 5).map((item, i) => (
-      <View key={i} style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: item.cor, marginRight: 6 }} />
-        <Text style={{ flex: 1, fontSize: 11, color: cores.textoSecundario }} numberOfLines={1}>{item.nome}</Text>
-        <Text style={{ fontSize: 11, fontWeight: "bold", color: cores.textoPrincipal }}>
-          {total > 0 ? `${((item.valor / total) * 100).toFixed(0)}%` : "0%"}
-        </Text>
-      </View>
-    ))}
-    {dados.length > 5 && (
-      <Text style={{ fontSize: 10, color: cores.textoSecundario }}>+{dados.length - 5} outras</Text>
-    )}
-  </View>
-);
 
 export default function Dashboard() {
   const { isDark, session } = useAppTheme();
@@ -251,6 +210,7 @@ export default function Dashboard() {
   const [foiPago, setFoiPago] = useState(true);
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
+  const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
   // --- Cálculos ---
   const saldoInicialTotal = contas.reduce((acc, curr) => acc + curr.saldo_inicial, 0);
@@ -415,11 +375,13 @@ export default function Dashboard() {
   const salvarConta = async () => {
     if (nomeConta.trim() === "") return Alert.alert("Aviso", "Dá um nome à conta.");
     const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
-    const { error } = await supabase.from("contas").insert([{
-      nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id,
-      compartilhado: contaCompartilhada, cor: corNovaConta,
-    }]);
-    if (error) return Alert.alert("Erro", "Falha ao salvar conta.");
+    const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
+    let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
+    if (res.error) {
+      // coluna "cor" pode não existir — tentar sem ela
+      res = await supabase.from("contas").insert([base]);
+    }
+    if (res.error) return Alert.alert("Erro", `Falha ao salvar conta: ${res.error.message}`);
     setNomeConta("");
     setSaldoInicialConta("");
     setContaCompartilhada(false);
@@ -440,17 +402,33 @@ export default function Dashboard() {
 
   const salvarEdicaoConta = async () => {
     if (!contaEditando || nomeEditConta.trim() === "") return Alert.alert("Aviso", "Nome inválido.");
-    const updates: any = { nome: nomeEditConta, compartilhado: compartilhadoEditConta, cor: corEditConta };
+    const base: any = { nome: nomeEditConta, compartilhado: compartilhadoEditConta };
     if (editandoSaldoConta) {
       const saldoNum = parseFloat(saldoEditConta.replace(",", "."));
       if (isNaN(saldoNum)) return Alert.alert("Aviso", "Saldo inválido.");
-      updates.saldo_inicial = saldoNum;
+      base.saldo_inicial = saldoNum;
     }
-    const { error } = await supabase.from("contas").update(updates).eq("id", contaEditando.id);
-    if (error) return Alert.alert("Erro", "Falha ao atualizar conta.");
+    let res = await supabase.from("contas").update({ ...base, cor: corEditConta }).eq("id", contaEditando.id);
+    if (res.error) {
+      // coluna "cor" pode não existir — tentar sem ela
+      res = await supabase.from("contas").update(base).eq("id", contaEditando.id);
+    }
+    if (res.error) return Alert.alert("Erro", `Falha ao atualizar conta: ${res.error.message}`);
     setModalEditarContaVisivel(false);
     setContaEditando(null);
     setEditandoSaldoConta(false);
+    carregarDados();
+  };
+
+  const executarArquivar = async (conta: Conta) => {
+    const { error } = await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
+    if (error) {
+      return Alert.alert(
+        "Coluna ausente",
+        "Para arquivar contas, adicione a coluna 'arquivado' (boolean, default false) na tabela 'contas' no Supabase."
+      );
+    }
+    setModalEditarContaVisivel(false);
     carregarDados();
   };
 
@@ -462,35 +440,22 @@ export default function Dashboard() {
         `A conta "${conta.nome}" tem lançamentos e não pode ser excluída. Deseja arquivá-la?`,
         [
           { text: "Cancelar", style: "cancel" },
-          {
-            text: "Arquivar",
-            onPress: async () => {
-              await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
-              setModalEditarContaVisivel(false);
-              carregarDados();
-            },
-          },
+          { text: "Arquivar", onPress: () => executarArquivar(conta) },
         ]
       );
     } else {
       Alert.alert(
-        "Arquivar Conta",
-        `Deseja arquivar "${conta.nome}"? Ela não possui lançamentos e poderia ser excluída.`,
+        "Arquivar ou Excluir",
+        `A conta "${conta.nome}" não possui lançamentos. O que deseja fazer?`,
         [
           { text: "Cancelar", style: "cancel" },
-          {
-            text: "Arquivar",
-            onPress: async () => {
-              await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
-              setModalEditarContaVisivel(false);
-              carregarDados();
-            },
-          },
+          { text: "Arquivar", onPress: () => executarArquivar(conta) },
           {
             text: "Excluir",
             style: "destructive",
             onPress: async () => {
-              await supabase.from("contas").delete().eq("id", conta.id);
+              const { error } = await supabase.from("contas").delete().eq("id", conta.id);
+              if (error) return Alert.alert("Erro", `Falha ao excluir: ${error.message}`);
               setModalEditarContaVisivel(false);
               carregarDados();
             },
@@ -658,11 +623,11 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {contas.length === 0 ? (
+          {contas.filter(c => !c.arquivado).length === 0 ? (
             <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não registou nenhuma conta. Toque em "Nova Conta" para começar.</Text>
           ) : (
             <View style={styles.accountsGrid}>
-              {contas.map((conta) => {
+              {contas.filter(c => !c.arquivado).map((conta) => {
                 const estilo = getEstiloBanco(conta.nome, isDark, conta.cor);
                 return (
                   <TouchableOpacity
@@ -688,6 +653,42 @@ export default function Dashboard() {
               })}
             </View>
           )}
+
+          {/* Contas arquivadas */}
+          {contas.filter(c => c.arquivado).length > 0 && (
+            <>
+              <TouchableOpacity
+                onPress={() => setMostrarArquivadas(!mostrarArquivadas)}
+                style={{ flexDirection: "row", alignItems: "center", marginTop: 12, paddingVertical: 6 }}
+              >
+                <MaterialIcons name={mostrarArquivadas ? "expand-less" : "expand-more"} size={18} color={Cores.textoSecundario} />
+                <Text style={{ color: Cores.textoSecundario, fontSize: 13, marginLeft: 4 }}>
+                  {mostrarArquivadas ? "Ocultar arquivadas" : `Ver ${contas.filter(c => c.arquivado).length} conta(s) arquivada(s)`}
+                </Text>
+              </TouchableOpacity>
+              {mostrarArquivadas && (
+                <View style={[styles.accountsGrid, { marginTop: 8 }]}>
+                  {contas.filter(c => c.arquivado).map((conta) => {
+                    const estilo = getEstiloBanco(conta.nome, isDark, conta.cor);
+                    return (
+                      <TouchableOpacity
+                        key={conta.id}
+                        style={[styles.accountCard, { backgroundColor: estilo.bg, opacity: 0.5, borderColor: Cores.borda, borderWidth: 1 }]}
+                        onPress={() => abrirEditarConta(conta)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <MaterialIcons name="archive" size={14} color={estilo.text} style={{ marginRight: 6 }} />
+                          <Text style={[styles.accountName, { color: estilo.text }]}>{conta.nome}</Text>
+                        </View>
+                        <Text style={{ color: estilo.text, opacity: 0.7, fontSize: 11, marginTop: 4 }}>Arquivada — toque para editar</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {/* GRÁFICOS DE PIZZA */}
@@ -702,10 +703,7 @@ export default function Dashboard() {
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#E76F51", marginRight: 8 }} />
               <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Despesas por Categoria</Text>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <PieChart dados={dadosDespesasPorCat} total={despesasDoMes} isDark={isDark} />
-              <Legenda dados={dadosDespesasPorCat} total={despesasDoMes} cores={Cores} />
-            </View>
+            <BarChartCategorias dados={dadosDespesasPorCat} total={despesasDoMes} isDark={isDark} />
             {despesasDoMes > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
                 Total: R$ {despesasDoMes.toFixed(2)}
@@ -719,10 +717,7 @@ export default function Dashboard() {
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#8AB17D", marginRight: 8 }} />
               <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Receitas por Categoria</Text>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <PieChart dados={dadosReceitasPorCat} total={receitasDoMes} isDark={isDark} />
-              <Legenda dados={dadosReceitasPorCat} total={receitasDoMes} cores={Cores} />
-            </View>
+            <BarChartCategorias dados={dadosReceitasPorCat} total={receitasDoMes} isDark={isDark} />
             {receitasDoMes > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
                 Total: R$ {receitasDoMes.toFixed(2)}
@@ -1141,7 +1136,7 @@ export default function Dashboard() {
       <Modal animationType="slide" transparent visible={modalTransVisivel} onRequestClose={() => setModalTransVisivel(false)}>
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={styles.scrollModalContent}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, minHeight: 520 }]}>
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Transação</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 <TouchableOpacity style={[styles.typeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>

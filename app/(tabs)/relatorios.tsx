@@ -49,7 +49,7 @@ export default function RelatoriosScreen() {
     borda: isDark ? "#333333" : "#EEEEEE",
     pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
     linhaGuia: isDark ? "#2C2C2C" : "#E8E8E8",
-    linhaBalance: isDark ? "#FFFFFF" : "#2C2C2C",
+    linhaBalance: "#457B9D",
   };
 
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
