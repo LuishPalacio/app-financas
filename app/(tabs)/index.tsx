@@ -778,8 +778,8 @@ export default function Dashboard() {
       {/* MODAL EDITAR CONTA */}
       <Modal animationType="slide" transparent visible={modalEditarContaVisivel} onRequestClose={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.scrollModalContent}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Editar Conta</Text>
 
               {/* Info estática da conta */}
@@ -870,8 +870,8 @@ export default function Dashboard() {
                 <Button title="Cancelar" color="#999" onPress={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }} />
                 <Button title="Salvar" color="#457B9D" onPress={salvarEdicaoConta} />
               </View>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
 
