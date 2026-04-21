@@ -4,6 +4,7 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
+import { Component, ReactNode } from "react";
 import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { Alert, useColorScheme } from "react-native";
@@ -23,6 +24,34 @@ import {
   View,
 } from "react-native";
 import { supabase } from "../lib/supabase"; // <-- NOSSO CABO DA NUVEM AQUI!
+
+// ERROR BOUNDARY
+class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
+  state = { temErro: false };
+  static getDerivedStateFromError() { return { temErro: true }; }
+  render() {
+    if (this.state.temErro) {
+      return (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#121212", padding: 30 }}>
+          <MaterialIcons name="error-outline" size={64} color="#E76F51" />
+          <Text style={{ color: "#FFF", fontSize: 20, fontWeight: "bold", marginTop: 16, textAlign: "center" }}>
+            Algo deu errado
+          </Text>
+          <Text style={{ color: "#AAA", fontSize: 14, marginTop: 8, textAlign: "center" }}>
+            Feche e abra o aplicativo novamente. Se o problema persistir, contacte o suporte.
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 24, backgroundColor: "#2A9D8F", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 }}
+            onPress={() => this.setState({ temErro: false })}
+          >
+            <Text style={{ color: "#FFF", fontWeight: "bold" }}>Tentar novamente</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // CONTEXTO GLOBAL (AGORA GUARDA A SESSÃO DO USUÁRIO TAMBÉM)
 export const ThemeContext = createContext({
@@ -59,7 +88,7 @@ export default function RootLayout() {
         if (update.isAvailable) {
           Alert.alert(
             "Nova Atualização!",
-            "Baixando as novidades do LHS Finanças...",
+            "Baixando as novidades do FinFlow...",
             [{ text: "Aguarde..." }],
           );
 
@@ -207,6 +236,7 @@ export default function RootLayout() {
 
   // O APLICATIVO EM SI
   return (
+    <ErrorBoundary>
     <ThemeContext.Provider
       value={{
         isDark,
@@ -226,6 +256,7 @@ export default function RootLayout() {
         </ThemeProvider>
       </SQLiteProvider>
     </ThemeContext.Provider>
+    </ErrorBoundary>
   );
 }
 

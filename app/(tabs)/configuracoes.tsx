@@ -54,7 +54,7 @@ export default function ConfiguracoesScreen() {
 
   // Feedback
   const [modalFeedbackVisivel, setModalFeedbackVisivel] = useState(false);
-  const [tipoFeedback, setTipoFeedback] = useState<"problema" | "sugestao" | "reclamacao">("sugestao");
+  const [tipoFeedback, setTipoFeedback] = useState<"problema" | "sugestao" | "reclamação">("sugestao");
   const [mensagemFeedback, setMensagemFeedback] = useState("");
   const [loadingFeedback, setLoadingFeedback] = useState(false);
 
@@ -78,6 +78,8 @@ export default function ConfiguracoesScreen() {
 
   const enviarConvite = async () => {
     if (!emailConvite.trim()) return Alert.alert("Aviso", "Digite o e-mail do seu parceiro(a).");
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailConvite.trim())) return Alert.alert("Aviso", "Digite um e-mail válido.");
     if (emailConvite.toLowerCase() === meuEmail.toLowerCase()) return Alert.alert("Aviso", "Você não pode convidar a si mesmo!");
     setLoadingParceria(true);
     const { error } = await supabase.from("parcerias").insert([{ solicitante_id: meuId, convidado_email: emailConvite.toLowerCase().trim(), status: "pendente" }]);
@@ -204,13 +206,12 @@ export default function ConfiguracoesScreen() {
   const apagarContaCompleta = async () => {
     if (!meuId) return;
     try {
-      await Promise.all([
-        supabase.from("transacoes").delete().eq("user_id", meuId),
-        supabase.from("caixinhas").delete().eq("user_id", meuId),
-        supabase.from("contas").delete().eq("user_id", meuId),
-        supabase.from("categorias").delete().eq("user_id", meuId),
-        supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`),
-      ]);
+      // Sequencial para garantir integridade (foreign keys)
+      await supabase.from("transacoes").delete().eq("user_id", meuId);
+      await supabase.from("caixinhas").delete().eq("user_id", meuId);
+      await supabase.from("contas").delete().eq("user_id", meuId);
+      await supabase.from("categorias").delete().eq("user_id", meuId);
+      await supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`);
       await supabase.auth.signOut();
       Alert.alert("Conta apagada", "Seus dados foram removidos com sucesso.");
     } catch (error) {
@@ -401,7 +402,7 @@ export default function ConfiguracoesScreen() {
               {([
                 { key: "sugestao", label: "Sugestão", cor: "#2A9D8F" },
                 { key: "problema", label: "Problema", cor: "#E76F51" },
-                { key: "reclamacao", label: "Reclamação", cor: "#F4A261" },
+                { key: "reclamação", label: "Reclamação", cor: "#F4A261" },
               ] as const).map((op) => (
                 <TouchableOpacity
                   key={op.key}

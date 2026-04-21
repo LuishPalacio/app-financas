@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,24 +29,68 @@ export default function LoginScreen() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmSenha, setMostrarConfirmSenha] = useState(false);
 
+  const [tentativasFalhadas, setTentativasFalhadas] = useState(0);
+  const [bloqueadoAte, setBloqueadoAte] = useState<number | null>(null);
+  const [segundosRestantes, setSegundosRestantes] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (bloqueadoAte === null) return;
+    timerRef.current = setInterval(() => {
+      const restante = Math.ceil((bloqueadoAte - Date.now()) / 1000);
+      if (restante <= 0) {
+        setSegundosRestantes(0);
+        setBloqueadoAte(null);
+        setTentativasFalhadas(0);
+        if (timerRef.current) clearInterval(timerRef.current);
+      } else {
+        setSegundosRestantes(restante);
+      }
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [bloqueadoAte]);
+
+  const validarEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+
+  const formatarTelefone = (valor: string) => {
+    const nums = valor.replace(/\D/g, "").slice(0, 11);
+    if (nums.length <= 2) return nums;
+    if (nums.length <= 7) return `(${nums.slice(0, 2)}) ${nums.slice(2)}`;
+    if (nums.length <= 11) return `(${nums.slice(0, 2)}) ${nums.slice(2, 7)}-${nums.slice(7)}`;
+    return valor;
+  };
+
   async function signInWithEmail() {
+    if (bloqueadoAte && Date.now() < bloqueadoAte)
+      return Alert.alert("Aguarde", `Muitas tentativas. Tente novamente em ${segundosRestantes}s.`);
     if (!email || !password)
       return Alert.alert("Aviso", "Preencha email e senha.");
+    if (!validarEmail(email))
+      return Alert.alert("Aviso", "Digite um e-mail válido (ex: nome@dominio.com).");
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) Alert.alert("Erro ao entrar", error.message);
-    else router.replace("/(tabs)");
+    if (error) {
+      const novasTentativas = tentativasFalhadas + 1;
+      setTentativasFalhadas(novasTentativas);
+      if (novasTentativas >= 3) {
+        setBloqueadoAte(Date.now() + 30000);
+        Alert.alert("Bloqueado", "3 tentativas incorretas. Aguarde 30 segundos.");
+      } else {
+        Alert.alert("Erro ao entrar", `${error.message} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`);
+      }
+    } else {
+      router.replace("/(tabs)");
+    }
     setLoading(false);
   }
 
   async function signUpWithEmail() {
     if (!nome || !email || !password)
       return Alert.alert("Aviso", "Preencha todos os campos obrigatórios (Nome, E-mail e Senha).");
+    if (!validarEmail(email))
+      return Alert.alert("Aviso", "Digite um e-mail válido (ex: nome@dominio.com).");
 
     if (password !== confirmPassword)
       return Alert.alert("Senhas diferentes", "A senha e a confirmação não conferem. Verifique e tente novamente.");
@@ -174,7 +218,7 @@ export default function LoginScreen() {
                 style={styles.input}
                 placeholder="Telefone (Ex: 11 99999-9999)"
                 placeholderTextColor="#999"
-                onChangeText={setTelefone}
+                onChangeText={(v) => setTelefone(formatarTelefone(v))}
                 value={telefone}
                 keyboardType="phone-pad"
               />
@@ -240,7 +284,7 @@ export default function LoginScreen() {
 
           {/* BOTÃO PRINCIPAL */}
           <TouchableOpacity
-            style={[styles.mainButton, loading && styles.buttonDisabled]}
+            style={[styles.mainButton, (loading || !!bloqueadoAte) && styles.buttonDisabled]}
             onPress={
               isRecuperandoSenha
                 ? recuperarSenha
@@ -248,10 +292,12 @@ export default function LoginScreen() {
                   ? signInWithEmail
                   : signUpWithEmail
             }
-            disabled={loading}
+            disabled={loading || !!bloqueadoAte}
           >
             {loading ? (
               <ActivityIndicator color="#FFF" />
+            ) : bloqueadoAte ? (
+              <Text style={styles.mainButtonText}>Aguarde {segundosRestantes}s</Text>
             ) : (
               <Text style={styles.mainButtonText}>
                 {isRecuperandoSenha

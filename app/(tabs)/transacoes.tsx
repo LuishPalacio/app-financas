@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -84,6 +84,8 @@ export default function TransacoesScreen() {
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<"todas" | "receita" | "despesa" | "transferencia">("todas");
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const ITENS_POR_PAGINA = 30;
 
   const [modalFiltroConta, setModalFiltroConta] = useState(false);
   const [modalFiltroCat, setModalFiltroCat] = useState(false);
@@ -91,10 +93,12 @@ export default function TransacoesScreen() {
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
+  const mesAtualIdx = hoje.getMonth();
   const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
   const [mesSelecionado, setMesSelecionado] = useState<string>(
     `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
   );
+  const mesesScrollRef = useRef<any>(null);
 
   const alterarAno = (direcao: number) => {
     const novoAno = anoSelecionado + direcao;
@@ -107,9 +111,9 @@ export default function TransacoesScreen() {
     if (!session?.user?.id) return;
     try {
       const [resCategorias, resContas, resTransacoes] = await Promise.all([
-        supabase.from("categorias").select("*"),
-        supabase.from("contas").select("*"),
-        supabase.from("transacoes").select("*"),
+        supabase.from("categorias").select("*").eq("user_id", session.user.id),
+        supabase.from("contas").select("*").eq("user_id", session.user.id),
+        supabase.from("transacoes").select("*").eq("user_id", session.user.id),
       ]);
       if (resCategorias.data) setCategorias(resCategorias.data);
       if (resContas.data) setContas(resContas.data);
@@ -119,7 +123,13 @@ export default function TransacoesScreen() {
     }
   };
 
-  useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
+  useFocusEffect(useCallback(() => {
+    carregarDados();
+    // Scroll para o mês atual ao entrar na aba
+    setTimeout(() => {
+      mesesScrollRef.current?.scrollTo({ x: mesAtualIdx * 72, animated: true });
+    }, 150);
+  }, [session]));
 
   const deletarTransacao = async (id: number) => {
     Alert.alert("Excluir", "Tem certeza que deseja apagar esta transação?", [
@@ -163,10 +173,14 @@ export default function TransacoesScreen() {
     else carregarDados();
   };
 
-  const toggleFiltroConta = (id: number) =>
+  const toggleFiltroConta = (id: number) => {
+    setPaginaAtual(1);
     setFiltroContas((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
-  const toggleFiltroCategoria = (id: number) =>
+  };
+  const toggleFiltroCategoria = (id: number) => {
+    setPaginaAtual(1);
     setFiltroCategorias((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
+  };
 
   const transacoesDoMes = transacoes
     .filter((t) => {
@@ -186,6 +200,9 @@ export default function TransacoesScreen() {
       return passaConta && passaCategoria && passaMes && passaTipo;
     })
     .sort((a, b) => (b.data_vencimento || "").localeCompare(a.data_vencimento || ""));
+
+  const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
+  const temMais = transacoesPaginadas.length < transacoesDoMes.length;
 
   const totalReceitas = transacoesDoMes
     .filter((t) => t.tipo === "receita" && !t.descricao.includes("[Transf.]"))
@@ -240,14 +257,14 @@ export default function TransacoesScreen() {
 
       {/* SELETOR DE MÊS */}
       <View style={styles.mesesScrollContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
+        <ScrollView ref={mesesScrollRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
           {mesesDoAno.map((yyyymm) => {
             const isAtivo = mesSelecionado === yyyymm;
             return (
               <TouchableOpacity
                 key={yyyymm}
                 style={[styles.mesPill, { backgroundColor: isAtivo ? Cores.textoPrincipal : Cores.pillFundo, borderColor: isAtivo ? Cores.textoPrincipal : Cores.borda }]}
-                onPress={() => setMesSelecionado(yyyymm)}
+                onPress={() => { setMesSelecionado(yyyymm); setPaginaAtual(1); }}
               >
                 <Text style={[styles.mesPillText, { color: isAtivo ? Cores.fundo : Cores.textoSecundario }]}>
                   {getNomeMes(yyyymm.split("-")[1])?.substring(0, 3)}
@@ -295,13 +312,33 @@ export default function TransacoesScreen() {
 
           {transacoesDoMes.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <MaterialIcons name="search-off" size={36} color={Cores.textoSecundario} style={{ marginBottom: 8 }} />
-              <Text style={[styles.emptyMonthText, { color: Cores.textoSecundario }]}>
-                Nenhum registro encontrado com estes filtros.
-              </Text>
+              {filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" ? (
+                <>
+                  <MaterialIcons name="search-off" size={40} color={Cores.textoSecundario} style={{ marginBottom: 10 }} />
+                  <Text style={[styles.emptyMonthText, { color: Cores.textoSecundario }]}>
+                    Nenhum resultado com os filtros aplicados.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => { setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); }}
+                    style={{ marginTop: 12, backgroundColor: "#457B9D22", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}
+                  >
+                    <Text style={{ color: "#457B9D", fontWeight: "600" }}>Limpar filtros</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <MaterialIcons name="receipt-long" size={40} color={Cores.textoSecundario} style={{ marginBottom: 10 }} />
+                  <Text style={[styles.emptyMonthText, { color: Cores.textoSecundario }]}>
+                    Nenhuma transação em {formatarMesAno(mesSelecionado)}.
+                  </Text>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: 4 }}>
+                    Use o botão + no início para adicionar.
+                  </Text>
+                </>
+              )}
             </View>
           ) : (
-            transacoesDoMes.map((t, index) => {
+            transacoesPaginadas.map((t, index) => {
               const conta = contas.find((c) => c.id === t.conta_id);
               const categoria = categorias.find((c) => c.id === t.categoria_id);
               const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
@@ -382,6 +419,18 @@ export default function TransacoesScreen() {
                 </View>
               );
             })
+          )}
+
+          {/* Ver mais */}
+          {temMais && (
+            <TouchableOpacity
+              onPress={() => setPaginaAtual((p) => p + 1)}
+              style={{ padding: 14, alignItems: "center", borderTopWidth: 1, borderTopColor: Cores.borda }}
+            >
+              <Text style={{ color: "#457B9D", fontWeight: "600" }}>
+                Ver mais ({transacoesDoMes.length - transacoesPaginadas.length} restantes)
+              </Text>
+            </TouchableOpacity>
           )}
 
           {/* Rodapé */}

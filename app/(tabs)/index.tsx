@@ -104,8 +104,9 @@ const mesesEmPortugues = [
 // Gráfico de barras horizontais por categoria
 const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string }[]; total: number; isDark: boolean }) => {
   if (total === 0 || dados.length === 0) return (
-    <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 16 }}>
-      <Text style={{ color: isDark ? "#555" : "#CCC", fontSize: 12 }}>Sem dados no período</Text>
+    <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 20 }}>
+      <MaterialIcons name="bar-chart" size={32} color={isDark ? "#333" : "#DDD"} />
+      <Text style={{ color: isDark ? "#555" : "#CCC", fontSize: 12, marginTop: 6 }}>Nenhuma transação neste mês</Text>
     </View>
   );
   return (
@@ -197,6 +198,7 @@ export default function Dashboard() {
   const [editandoSaldoConta, setEditandoSaldoConta] = useState(false);
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
+  const [loadingTrans, setLoadingTrans] = useState(false);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
   const [tipoTransacao, setTipoTransacao] = useState<"receita" | "despesa" | "transferencia">("despesa");
@@ -264,9 +266,9 @@ export default function Dashboard() {
 
     try {
       const [resCategorias, resContas, resTransacoes, resParceria] = await Promise.all([
-        supabase.from("categorias").select("*"),
-        supabase.from("contas").select("*"),
-        supabase.from("transacoes").select("*"),
+        supabase.from("categorias").select("*").eq("user_id", session.user.id),
+        supabase.from("contas").select("*").eq("user_id", session.user.id),
+        supabase.from("transacoes").select("*").eq("user_id", session.user.id),
         supabase.from("parcerias").select("id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
@@ -478,10 +480,11 @@ export default function Dashboard() {
   };
 
   const salvarTransacao = async () => {
+    if (loadingTrans) return;
     if (descTransacao.trim() === "" || valorTransacao.trim() === "")
       return Alert.alert("Aviso", "Preenche a descrição e o valor.");
     const valorNum = parseFloat(valorTransacao.replace(",", "."));
-    if (isNaN(valorNum)) return Alert.alert("Aviso", "Valor inválido.");
+    if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "O valor deve ser maior que zero.");
 
     let totalRepeticoes = 1;
     let valorFinal = valorNum;
@@ -515,7 +518,9 @@ export default function Dashboard() {
       }
     }
 
+    setLoadingTrans(true);
     const { error } = await supabase.from("transacoes").insert(novasTransacoes);
+    setLoadingTrans(false);
     if (error) return Alert.alert("Erro", "Falha ao guardar os registos na nuvem.");
 
     setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
@@ -624,7 +629,14 @@ export default function Dashboard() {
           </View>
 
           {contas.filter(c => !c.arquivado).length === 0 ? (
-            <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não registou nenhuma conta. Toque em "Nova Conta" para começar.</Text>
+            <TouchableOpacity
+              onPress={() => setModalContaVisivel(true)}
+              style={{ alignItems: "center", paddingVertical: 28, borderRadius: 12, borderWidth: 2, borderColor: Cores.borda, borderStyle: "dashed" }}
+            >
+              <MaterialIcons name="account-balance-wallet" size={40} color={Cores.borda} />
+              <Text style={{ color: Cores.textoSecundario, marginTop: 10, fontWeight: "600" }}>Nenhuma conta criada</Text>
+              <Text style={{ color: "#457B9D", fontSize: 13, marginTop: 4 }}>Toque para adicionar sua primeira conta</Text>
+            </TouchableOpacity>
           ) : (
             <View style={styles.accountsGrid}>
               {contas.filter(c => !c.arquivado).map((conta) => {
@@ -1222,8 +1234,8 @@ export default function Dashboard() {
               )}
 
               <View style={styles.modalButtons}>
-                <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} />
-                <Button title="Guardar" color="#2A9D8F" onPress={salvarTransacao} />
+                <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} disabled={loadingTrans} />
+                <Button title={loadingTrans ? "Aguarde..." : "Guardar"} color="#2A9D8F" onPress={salvarTransacao} disabled={loadingTrans} />
               </View>
             </ScrollView>
           </View>

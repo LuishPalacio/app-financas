@@ -98,6 +98,7 @@ export default function CaixinhasScreen() {
   const [valorMovimento, setValorMovimento] = useState("");
   const [tipoMovimento, setTipoMovimento] = useState<"guardar" | "resgatar">("guardar");
   const [contaMovimentoId, setContaMovimentoId] = useState<number | null>(null);
+  const [loadingMovimento, setLoadingMovimento] = useState(false);
 
   // Modal histórico
   const [modalHistoricoVisivel, setModalHistoricoVisivel] = useState(false);
@@ -109,8 +110,8 @@ export default function CaixinhasScreen() {
     if (!session?.user?.id) return;
     try {
       const [resCaixinhas, resContas] = await Promise.all([
-        supabase.from("caixinhas").select("*"),
-        supabase.from("contas").select("*"),
+        supabase.from("caixinhas").select("*").eq("user_id", session.user.id),
+        supabase.from("contas").select("*").eq("user_id", session.user.id),
       ]);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
       if (resContas.data) setContas(resContas.data);
@@ -127,7 +128,7 @@ export default function CaixinhasScreen() {
     if (nomeCaixinha.trim() === "" || metaValor.trim() === "")
       return Alert.alert("Aviso", "Preenche o nome e a meta.");
     const valorNum = parseFloat(metaValor.replace(",", "."));
-    if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
+    if (isNaN(valorNum) || valorNum < 1) return Alert.alert("Aviso", "A meta deve ser maior que R$ 1,00.");
 
     const { error } = await supabase.from("caixinhas").insert([{
       nome: nomeCaixinha, meta_valor: valorNum, saldo_atual: 0,
@@ -201,31 +202,48 @@ export default function CaixinhasScreen() {
     const { data } = await supabase
       .from("transacoes")
       .select("id, tipo, valor, data_vencimento, descricao, conta_id")
-      .or(`descricao.ilike.Guardar em: ${caixa.nome},descricao.ilike.Resgate de: ${caixa.nome}`)
+      .eq("user_id", session.user.id)
       .order("data_vencimento", { ascending: false });
 
-    setHistoricoMovimentos(data ?? []);
+    // Filtrar por caixinha pelo nome em código (evita SQL injection via ilike interpolado)
+    const nomeGuardar = `Guardar em: ${caixa.nome}`;
+    const nomeResgate = `Resgate de: ${caixa.nome}`;
+    const dataFiltrada = (data ?? []).filter(
+      (t) => t.descricao === nomeGuardar || t.descricao === nomeResgate
+    );
+
+    setHistoricoMovimentos(dataFiltrada);
     setModalHistoricoVisivel(true);
   };
 
   const executarMovimento = async (valorNum: number, novoSaldo: number) => {
     if (!caixaSelecionada) return;
-
-    const { error: errorCaixinha } = await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixaSelecionada.id);
-    if (errorCaixinha) return Alert.alert("Erro", "Não foi possível atualizar o saldo.");
+    setLoadingMovimento(true);
 
     const descricao = tipoMovimento === "guardar"
       ? `Guardar em: ${caixaSelecionada.nome}`
       : `Resgate de: ${caixaSelecionada.nome}`;
 
-    await supabase.from("transacoes").insert([{
+    // Atômico: primeiro insere a transação, só depois atualiza saldo
+    const { error: errorTrans } = await supabase.from("transacoes").insert([{
       tipo: tipoMovimento === "guardar" ? "despesa" : "receita",
       valor: valorNum, descricao,
       data_vencimento: new Date().toISOString().split("T")[0],
       conta_id: contaMovimentoId, categoria_id: null,
       status: "paga", user_id: session.user.id,
     }]);
+    if (errorTrans) {
+      setLoadingMovimento(false);
+      return Alert.alert("Erro", "Não foi possível registrar a movimentação.");
+    }
 
+    const { error: errorCaixinha } = await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixaSelecionada.id);
+    if (errorCaixinha) {
+      setLoadingMovimento(false);
+      return Alert.alert("Erro", "Transação registrada mas saldo da caixinha não foi atualizado. Contacte o suporte.");
+    }
+
+    setLoadingMovimento(false);
     setModalMovimentoVisivel(false); setCaixaSelecionada(null); setContaMovimentoId(null);
     carregarDados();
   };
@@ -286,10 +304,25 @@ export default function CaixinhasScreen() {
         </View>
 
         {caixinhas.length === 0 ? (
-          <Text style={[styles.emptyText, { color: Cores.textoSecundario }]}>Ainda não criou nenhuma caixinha.</Text>
+          <TouchableOpacity
+            onPress={() => setModalNovaVisivel(true)}
+            style={{ alignItems: "center", paddingVertical: 36, borderRadius: 16, borderWidth: 2, borderColor: Cores.borda, borderStyle: "dashed", marginTop: 8 }}
+          >
+            <MaterialIcons name="savings" size={48} color={Cores.borda} />
+            <Text style={{ color: Cores.textoPrincipal, marginTop: 12, fontWeight: "700", fontSize: 16 }}>
+              Nenhum objetivo criado
+            </Text>
+            <Text style={{ color: Cores.textoSecundario, fontSize: 13, marginTop: 6, textAlign: "center", paddingHorizontal: 20 }}>
+              Crie um objetivo e comece a poupar para os seus sonhos
+            </Text>
+            <View style={{ marginTop: 16, backgroundColor: "#2A9D8F", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 }}>
+              <Text style={{ color: "#FFF", fontWeight: "bold" }}>+ Criar primeiro objetivo</Text>
+            </View>
+          </TouchableOpacity>
         ) : (
           caixinhas.map((caixa) => {
-            const porcentagem = Math.min((Number(caixa.saldo_atual) / Number(caixa.meta_valor)) * 100, 100);
+            const metaSegura = Math.max(Number(caixa.meta_valor), 0.01);
+            const porcentagem = Math.min((Number(caixa.saldo_atual) / metaSegura) * 100, 100);
             const isCompleto = porcentagem === 100;
             return (
               <TouchableOpacity
@@ -540,7 +573,7 @@ export default function CaixinhasScreen() {
 
             <View style={styles.modalButtons}>
               <Button title="Cancelar" color="#999" onPress={() => setModalMovimentoVisivel(false)} />
-              <Button title="Confirmar" color={isDark ? "#FFF" : "#1A1A1A"} onPress={confirmarMovimento} />
+              <Button title={loadingMovimento ? "Aguarde..." : "Confirmar"} color="#2A9D8F" onPress={confirmarMovimento} disabled={loadingMovimento} />
             </View>
           </View>
         </View>

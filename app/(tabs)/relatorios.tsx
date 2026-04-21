@@ -70,13 +70,15 @@ export default function RelatoriosScreen() {
     try {
       const resT = await supabase
         .from("transacoes")
-        .select("valor, tipo, status, data_vencimento, conta_id");
+        .select("valor, tipo, status, data_vencimento, conta_id")
+        .eq("user_id", session.user.id);
       if (resT.data) setTransacoes(resT.data);
     } catch (e) { console.error(e); }
     try {
       const resC = await supabase
         .from("contas")
-        .select("id, nome, cor, saldo_inicial");
+        .select("id, nome, cor, saldo_inicial")
+        .eq("user_id", session.user.id);
       if (resC.data) setContas(resC.data);
     } catch (e) { console.error(e); }
   };

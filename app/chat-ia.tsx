@@ -443,8 +443,12 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
         .slice(-20) // últimas 20 mensagens para contexto
         .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.texto }));
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
       const resAPI = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
         body: JSON.stringify({
           model: MODELO,
@@ -453,6 +457,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
           max_tokens: 600,
         }),
       });
+      clearTimeout(timeoutId);
 
       const dados = await resAPI.json();
       if (!resAPI.ok) throw new Error(dados.error?.message || `Erro HTTP ${resAPI.status}`);
@@ -529,7 +534,10 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
         currentStatusRef.current = "collecting_data";
       }
     } catch (error: any) {
-      const msgErro = error?.message || "Erro desconhecido";
+      const isTimeout = error?.name === "AbortError";
+      const msgErro = isTimeout
+        ? "A IA demorou muito para responder. Verifique sua conexão e tente novamente."
+        : error?.message || "Erro ao conectar com a IA. Tente novamente.";
       setMensagens((prev) => [...prev, { id: Date.now().toString(), role: "ia", texto: `⚠️ ${msgErro}` }]);
     } finally {
       setCarregando(false);
