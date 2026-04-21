@@ -267,9 +267,9 @@ export default function Dashboard() {
     try {
       const [resCategorias, resContas, resTransacoes, resParceria] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
-        supabase.from("contas").select("*").eq("user_id", session.user.id),
-        supabase.from("transacoes").select("*").eq("user_id", session.user.id),
-        supabase.from("parcerias").select("id").eq("status", "aceito").or(
+        supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
+        supabase.from("transacoes").select("*"),    // RLS retorna próprias + de contas compartilhadas
+        supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
       ]);

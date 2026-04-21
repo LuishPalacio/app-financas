@@ -127,8 +127,8 @@ export default function TransacoesScreen() {
     try {
       const [resCategorias, resContas, resTransacoes] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
-        supabase.from("contas").select("*").eq("user_id", session.user.id),
-        supabase.from("transacoes").select("*").eq("user_id", session.user.id),
+        supabase.from("contas").select("*"),      // RLS retorna próprias + compartilhadas do parceiro
+        supabase.from("transacoes").select("*"),  // RLS retorna próprias + de contas compartilhadas
       ]);
       if (resCategorias.data) setCategorias(resCategorias.data);
       if (resContas.data) setContas(resContas.data);

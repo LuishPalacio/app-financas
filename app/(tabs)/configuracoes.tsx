@@ -64,8 +64,13 @@ export default function ConfiguracoesScreen() {
       .from("parcerias")
       .select("*")
       .or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId},convidado_email.eq.${meuEmail}`)
-      .limit(1);
-    setParceria(data && data.length > 0 ? data[0] : null);
+      .order("id", { ascending: false });
+
+    if (!data || data.length === 0) { setParceria(null); return; }
+
+    // Prioriza: aceito > pendente mais recente
+    const aceito = data.find((p) => p.status === "aceito");
+    setParceria(aceito ?? data[0]);
   };
 
   useFocusEffect(useCallback(() => {
@@ -77,15 +82,46 @@ export default function ConfiguracoesScreen() {
   }, [session]));
 
   const enviarConvite = async () => {
-    if (!emailConvite.trim()) return Alert.alert("Aviso", "Digite o e-mail do seu parceiro(a).");
+    const emailNormalizado = emailConvite.toLowerCase().trim();
+
+    if (!emailNormalizado) return Alert.alert("Aviso", "Digite o e-mail do seu parceiro(a).");
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(emailConvite.trim())) return Alert.alert("Aviso", "Digite um e-mail válido.");
-    if (emailConvite.toLowerCase() === meuEmail.toLowerCase()) return Alert.alert("Aviso", "Você não pode convidar a si mesmo!");
+    if (!emailRegex.test(emailNormalizado))
+      return Alert.alert("E-mail inválido", "Digite um e-mail válido (ex: nome@gmail.com).");
+
+    if (emailNormalizado === meuEmail.toLowerCase())
+      return Alert.alert("Aviso", "Você não pode convidar a si mesmo!");
+
     setLoadingParceria(true);
-    const { error } = await supabase.from("parcerias").insert([{ solicitante_id: meuId, convidado_email: emailConvite.toLowerCase().trim(), status: "pendente" }]);
+
+    // Verifica se já enviou convite para este e-mail
+    const { data: existente } = await supabase
+      .from("parcerias")
+      .select("id, status")
+      .eq("solicitante_id", meuId)
+      .eq("convidado_email", emailNormalizado);
+
+    if (existente && existente.length > 0) {
+      setLoadingParceria(false);
+      const st = existente[0].status;
+      if (st === "aceito") return Alert.alert("Aviso", "Você já tem uma parceria ativa com este e-mail.");
+      if (st === "pendente") return Alert.alert("Aviso", "Já existe um convite pendente para este e-mail.");
+    }
+
+    const { error } = await supabase.from("parcerias").insert([{
+      solicitante_id: meuId,
+      convidado_email: emailNormalizado,
+      status: "pendente",
+    }]);
     setLoadingParceria(false);
+
     if (error) Alert.alert("Erro", "Não foi possível enviar o convite. Tente novamente.");
-    else { Alert.alert("Sucesso", "Convite enviado com sucesso!"); setEmailConvite(""); carregarParceria(); }
+    else {
+      Alert.alert("Convite Enviado!", `Um convite foi enviado para ${emailNormalizado}.\n\nEle(a) verá o convite ao abrir o app.`);
+      setEmailConvite("");
+      carregarParceria();
+    }
   };
 
   const aceitarConvite = async () => {
@@ -228,7 +264,6 @@ export default function ConfiguracoesScreen() {
         user_id: meuId,
         tipo: tipoFeedback,
         mensagem: mensagemFeedback.trim(),
-        created_at: new Date().toISOString(),
       });
       setLoadingFeedback(false);
       if (error) {
@@ -316,18 +351,28 @@ export default function ConfiguracoesScreen() {
               <ActivityIndicator size="small" color="#2A9D8F" style={{ padding: 20 }} />
             ) : !parceria ? (
               <>
-                <Text style={[styles.helpText, { color: Cores.secundario }]}>Vincule a conta do seu cônjuge/parceiro para poderem partilhar despesas.</Text>
+                <Text style={[styles.helpText, { color: Cores.secundario }]}>
+                  Vincule a conta do seu cônjuge/parceiro para partilharem despesas. O parceiro deve ter uma conta cadastrada no FinFlow.
+                </Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="E-mail da conta do parceiro(a)"
+                  placeholder="E-mail cadastrado no FinFlow (ex: nome@gmail.com)"
                   placeholderTextColor={Cores.secundario}
                   value={emailConvite}
-                  onChangeText={setEmailConvite}
+                  onChangeText={(v) => setEmailConvite(v.toLowerCase().trim())}
                   autoCapitalize="none"
+                  autoCorrect={false}
                   keyboardType="email-address"
                 />
-                <TouchableOpacity style={styles.actionBtn} onPress={enviarConvite}>
-                  <Text style={styles.actionBtnText}>Enviar Convite</Text>
+                <TouchableOpacity
+                  style={[styles.actionBtn, loadingParceria && { opacity: 0.6 }]}
+                  onPress={enviarConvite}
+                  disabled={loadingParceria}
+                >
+                  {loadingParceria
+                    ? <ActivityIndicator size="small" color="#FFF" />
+                    : <Text style={styles.actionBtnText}>Enviar Convite</Text>
+                  }
                 </TouchableOpacity>
               </>
             ) : parceria.status === "pendente" ? (

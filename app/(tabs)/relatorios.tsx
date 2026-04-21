@@ -26,6 +26,7 @@ interface Conta {
   nome: string;
   cor?: string;
   saldo_inicial: number;
+  arquivado?: boolean;
 }
 
 const MESES_ABREV = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -54,7 +55,7 @@ export default function RelatoriosScreen() {
 
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
-  const [contasSelecionadas, setContasSelecionadas] = useState<number[]>([]);
+  const [contaSelecionada, setContaSelecionada] = useState<number | null>(null);
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -68,28 +69,16 @@ export default function RelatoriosScreen() {
   const carregarDados = async () => {
     if (!session?.user?.id) return;
     try {
-      const resT = await supabase
-        .from("transacoes")
-        .select("valor, tipo, status, data_vencimento, conta_id")
-        .eq("user_id", session.user.id);
+      const [resT, resC] = await Promise.all([
+        supabase.from("transacoes").select("valor, tipo, status, data_vencimento, conta_id"),
+        supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
+      ]);
       if (resT.data) setTransacoes(resT.data);
-    } catch (e) { console.error(e); }
-    try {
-      const resC = await supabase
-        .from("contas")
-        .select("id, nome, cor, saldo_inicial")
-        .eq("user_id", session.user.id);
-      if (resC.data) setContas(resC.data);
+      if (resC.data) setContas(resC.data.filter((c) => !c.arquivado));
     } catch (e) { console.error(e); }
   };
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
-
-  const toggleConta = (id: number) => {
-    setContasSelecionadas(prev =>
-      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-    );
-  };
 
   const alterarAno = (dir: number) => {
     const novoAno = anoSelecionado + dir;
@@ -97,14 +86,14 @@ export default function RelatoriosScreen() {
     setMesProjSelecionado(novoAno === anoAtualNum ? mesAtualIdx : 0);
   };
 
-  // Filtered data based on account selection
-  const transacoesFiltradas = contasSelecionadas.length === 0
+  // Filtered data based on account selection (null = todas)
+  const transacoesFiltradas = contaSelecionada === null
     ? transacoes
-    : transacoes.filter(t => contasSelecionadas.includes(t.conta_id));
+    : transacoes.filter(t => t.conta_id === contaSelecionada);
 
-  const contasFiltradas = contasSelecionadas.length === 0
+  const contasFiltradas = contaSelecionada === null
     ? contas
-    : contas.filter(c => contasSelecionadas.includes(c.id));
+    : contas.filter(c => c.id === contaSelecionada);
 
   const saldoInicialTotal = contasFiltradas.reduce((acc, c) => acc + Number(c.saldo_inicial), 0);
 
@@ -196,24 +185,49 @@ export default function RelatoriosScreen() {
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Fluxo de Caixa</Text>
         <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
           {getNomeMes(String(mesProjSelecionado + 1).padStart(2, "0"))} {anoSelecionado}
+          {contaSelecionada !== null
+            ? `  •  ${contas.find(c => c.id === contaSelecionada)?.nome ?? ""}`
+            : contas.length > 1 ? "  •  Todas as contas" : ""}
         </Text>
       </View>
 
       {/* ACCOUNT FILTER */}
-      {contas.length > 1 && (
+      {contas.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.contasFiltroScroll}
-          contentContainerStyle={{ paddingHorizontal: 15, gap: 8, paddingBottom: 8 }}
+          contentContainerStyle={{ paddingHorizontal: 15, gap: 8, alignItems: "center" }}
         >
+          {/* Todas */}
+          <TouchableOpacity
+            onPress={() => setContaSelecionada(null)}
+            style={[
+              styles.contaChip,
+              {
+                backgroundColor: contaSelecionada === null ? "#2A9D8F" : Cores.pillFundo,
+                borderColor: contaSelecionada === null ? "#2A9D8F" : Cores.borda,
+              },
+            ]}
+          >
+            <MaterialIcons
+              name="account-balance-wallet"
+              size={13}
+              color={contaSelecionada === null ? "#fff" : Cores.textoSecundario}
+            />
+            <Text style={[styles.contaChipText, { color: contaSelecionada === null ? "#fff" : Cores.textoSecundario }]}>
+              Todas
+            </Text>
+          </TouchableOpacity>
+
+          {/* Individual accounts */}
           {contas.map(conta => {
-            const sel = contasSelecionadas.includes(conta.id);
+            const sel = contaSelecionada === conta.id;
             const cor = conta.cor || "#2A9D8F";
             return (
               <TouchableOpacity
                 key={conta.id}
-                onPress={() => toggleConta(conta.id)}
+                onPress={() => setContaSelecionada(sel ? null : conta.id)}
                 style={[
                   styles.contaChip,
                   { backgroundColor: sel ? cor : Cores.pillFundo, borderColor: sel ? cor : Cores.borda },
@@ -553,7 +567,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 4 },
 
-  contasFiltroScroll: { marginBottom: 8 },
+  contasFiltroScroll: { height: 46, marginBottom: 4 },
   contaChip: {
     flexDirection: "row",
     alignItems: "center",

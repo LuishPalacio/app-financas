@@ -85,9 +85,12 @@ CAMPOS — move_caixinha:
 Intents:
 - create_transaction, create_account, create_caixinha, move_caixinha
 - delete_transaction, archive_account
-- analyze_finances: análise automática com regra 50/30/20
-- query: perguntas sobre finanças do usuário
+- analyze_finances: análise automática com regra 50/30/20 — execute direto, sem pedir confirmação
+- query: responda usando RESUMO_FINANCEIRO, CONTAS_DISPONIVEIS, CAIXINHAS_DISPONIVEIS — nunca peça confirmação
 - out_of_scope
+
+Para query e analyze_finances: use status "collecting_data" e coloque a resposta completa em "message".
+Para ações de criação/alteração: siga o fluxo normal de coleta → confirmação → execução.
 
 Formato obrigatório:
 {"intent":"...","status":"collecting_data","data":{},"missing_fields":[],"message":"mensagem aqui"}`;
@@ -127,30 +130,32 @@ export default function ChatIA() {
     const uid = session.user.id;
 
     const [resContas, resCat, resCaixa, resTransacoes] = await Promise.all([
-      supabase.from("contas").select("id, nome, saldo_inicial").or("arquivado.eq.false,arquivado.is.null"),
-      supabase.from("categorias").select("id, nome, tipo, cor").eq("ativa", 1),
-      supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor"),
-      supabase.from("transacoes").select("tipo, valor, status, categoria_id, data_vencimento").order("data_vencimento", { ascending: false }).limit(200),
+      supabase.from("contas").select("id, nome, saldo_inicial, compartilhado, arquivado"),
+      supabase.from("categorias").select("id, nome, tipo, cor").eq("user_id", uid).eq("ativa", 1),
+      supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, compartilhado"),
+      supabase.from("transacoes").select("tipo, valor, status, categoria_id, conta_id, data_vencimento").order("data_vencimento", { ascending: false }).limit(300),
     ]);
 
-    if (resContas.data) setContasUsuario(resContas.data);
+    const contasAtivas = (resContas.data || []).filter((c) => !c.arquivado);
+    if (contasAtivas.length > 0) setContasUsuario(contasAtivas);
     if (resCat.data) setCategoriasUsuario(resCat.data);
     if (resCaixa.data) setCaixinhasUsuario(resCaixa.data);
 
     // Calcular resumo financeiro do mês atual
-    if (resTransacoes.data && resContas.data && resCat.data) {
+    if (resTransacoes.data && contasAtivas.length > 0) {
       const mesAtual = new Date().toISOString().slice(0, 7);
       const transDoMes = resTransacoes.data.filter((t) => (t.data_vencimento || "").startsWith(mesAtual));
 
       const totalReceitas = transDoMes.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
       const totalDespesas = transDoMes.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
 
-      // Saldo de cada conta
-      const saldoContas = (resContas.data || []).map((c) => {
-        const transC = (resTransacoes.data || []).filter((t) => (t as any).conta_id === c.id && t.status === "paga");
+      // Saldo real de cada conta (com todas as transações pagas)
+      const saldoContas = contasAtivas.map((c) => {
+        const transC = resTransacoes.data!.filter((t) => t.conta_id === c.id && t.status === "paga");
         const rec = transC.filter((t) => t.tipo === "receita").reduce((acc, t) => acc + Number(t.valor), 0);
         const desp = transC.filter((t) => t.tipo === "despesa").reduce((acc, t) => acc + Number(t.valor), 0);
-        return `${c.nome}: R$${(Number(c.saldo_inicial) + rec - desp).toFixed(2)}`;
+        const label = c.compartilhado ? `${c.nome} (conjunta)` : c.nome;
+        return `${label}: R$${(Number(c.saldo_inicial) + rec - desp).toFixed(2)}`;
       }).join(", ");
 
       setResumoFinanceiro(
@@ -362,11 +367,19 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   const analisarFinancas = async (): Promise<string> => {
     if (!session?.user?.id) return "Não foi possível carregar seus dados.";
 
-    const mesAtual = new Date().toISOString().slice(0, 7);
+    const hoje = new Date();
+    const mesAtual = hoje.toISOString().slice(0, 7);
+
+    // Início de 3 meses atrás para comparação de tendência
+    const tresMesesAtras = new Date(hoje.getFullYear(), hoje.getMonth() - 2, 1).toISOString().split("T")[0];
+
     const { data: trans } = await supabase
       .from("transacoes")
-      .select("tipo, valor, status, categoria_id, data_vencimento")
-      .eq("status", "paga");
+      .select("tipo, valor, categoria_id, data_vencimento, conta_id")
+      .eq("status", "paga")
+      .gte("data_vencimento", tresMesesAtras)
+      .order("data_vencimento", { ascending: false })
+      .limit(500);
 
     if (!trans || trans.length === 0) return "Você ainda não tem transações registradas para análise.";
 
@@ -375,7 +388,20 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     const totalDesp = transDoMes.filter((t) => t.tipo === "despesa").reduce((acc, t) => acc + Number(t.valor), 0);
     const saldo = totalRec - totalDesp;
 
-    // Gastos por categoria
+    // Tendência: média de despesas dos 2 meses anteriores
+    const mesesAnteriores = [1, 2].map((offset) => {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - offset, 1);
+      return d.toISOString().slice(0, 7);
+    });
+    const despMesesAnt = mesesAnteriores.map((mes) =>
+      trans.filter((t) => t.tipo === "despesa" && (t.data_vencimento || "").startsWith(mes))
+           .reduce((acc, t) => acc + Number(t.valor), 0)
+    );
+    const mediaDespAnt = despMesesAnt.filter((v) => v > 0).length > 0
+      ? despMesesAnt.reduce((a, b) => a + b, 0) / despMesesAnt.filter((v) => v > 0).length
+      : 0;
+
+    // Gastos por categoria no mês atual
     const gastoPorCat: Record<number, number> = {};
     transDoMes.filter((t) => t.tipo === "despesa" && t.categoria_id).forEach((t) => {
       gastoPorCat[t.categoria_id!] = (gastoPorCat[t.categoria_id!] || 0) + Number(t.valor);
@@ -384,10 +410,18 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     const topCategorias = Object.entries(gastoPorCat)
       .map(([id, val]) => {
         const cat = categoriasUsuario.find((c) => c.id === Number(id));
-        return { nome: cat?.nome || `Cat.${id}`, valor: val };
+        return { nome: cat?.nome || `Categoria ${id}`, valor: val };
       })
       .sort((a, b) => b.valor - a.valor)
       .slice(0, 3);
+
+    // Saldo atual das contas
+    const saldoContas = contasUsuario.map((c) => {
+      const transC = trans.filter((t) => t.conta_id === c.id);
+      const rec = transC.filter((t) => t.tipo === "receita").reduce((acc, t) => acc + Number(t.valor), 0);
+      const desp = transC.filter((t) => t.tipo === "despesa").reduce((acc, t) => acc + Number(t.valor), 0);
+      return { nome: c.nome, saldo: Number(c.saldo_inicial) + rec - desp };
+    });
 
     // Regra 50/30/20
     const meta50 = totalRec * 0.5;
@@ -397,28 +431,45 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     let analise = `📊 Análise Financeira — ${mesAtual}\n\n`;
     analise += `💰 Receitas: R$ ${totalRec.toFixed(2)}\n`;
     analise += `💸 Despesas: R$ ${totalDesp.toFixed(2)}\n`;
-    analise += `📈 Saldo: R$ ${saldo.toFixed(2)}\n\n`;
+    analise += `📈 Saldo do mês: R$ ${saldo.toFixed(2)}\n`;
+
+    if (mediaDespAnt > 0) {
+      const variacaoPct = ((totalDesp - mediaDespAnt) / mediaDespAnt) * 100;
+      const sinal = variacaoPct > 0 ? "+" : "";
+      analise += `📉 Vs. média últimos meses: ${sinal}${variacaoPct.toFixed(0)}% (média R$${mediaDespAnt.toFixed(2)})\n`;
+    }
+
+    if (saldoContas.length > 0) {
+      analise += `\n🏦 Saldo das contas:\n`;
+      saldoContas.forEach((c) => { analise += `• ${c.nome}: R$ ${c.saldo.toFixed(2)}\n`; });
+    }
 
     if (totalRec > 0) {
-      analise += `📐 Regra 50/30/20:\n`;
-      analise += `• Necessidades (50%): meta R$${meta50.toFixed(2)}\n`;
-      analise += `• Desejos (30%): meta R$${meta30.toFixed(2)}\n`;
-      analise += `• Poupança (20%): meta R$${meta20.toFixed(2)}\n\n`;
+      analise += `\n📐 Regra 50/30/20 (meta/mês):\n`;
+      analise += `• Necessidades (50%): R$${meta50.toFixed(2)}\n`;
+      analise += `• Desejos (30%): R$${meta30.toFixed(2)}\n`;
+      analise += `• Poupança (20%): R$${meta20.toFixed(2)}\n`;
 
       if (totalDesp > totalRec * 0.8) {
-        analise += `⚠️ Atenção: Você gastou ${((totalDesp / totalRec) * 100).toFixed(0)}% da sua renda este mês.\n`;
-      }
-
-      if (meta20 > 0 && saldo < meta20) {
-        analise += `💡 Para atingir 20% de poupança, tente economizar mais R$${(meta20 - saldo).toFixed(2)}.\n`;
+        analise += `\n⚠️ Atenção: ${((totalDesp / totalRec) * 100).toFixed(0)}% da renda gasta este mês!\n`;
+      } else if (saldo >= meta20) {
+        analise += `\n✅ Parabéns! Sua poupança (R$${saldo.toFixed(2)}) está acima da meta de 20%.\n`;
+      } else if (meta20 > 0) {
+        analise += `\n💡 Para atingir 20% de poupança, economize mais R$${(meta20 - Math.max(saldo, 0)).toFixed(2)}.\n`;
       }
     }
 
     if (topCategorias.length > 0) {
-      analise += `\n🏆 Top gastos do mês:\n`;
+      analise += `\n🏆 Top categorias de gasto:\n`;
       topCategorias.forEach((c, i) => {
         analise += `${i + 1}. ${c.nome}: R$${c.valor.toFixed(2)}${totalDesp > 0 ? ` (${((c.valor / totalDesp) * 100).toFixed(0)}%)` : ""}\n`;
       });
+    }
+
+    if (caixinhasUsuario.length > 0) {
+      const totalMeta = caixinhasUsuario.reduce((acc, c) => acc + Number(c.meta_valor), 0);
+      const totalGuardado = caixinhasUsuario.reduce((acc, c) => acc + Number(c.saldo_atual), 0);
+      analise += `\n🎯 Objetivos: R$${totalGuardado.toFixed(2)} de R$${totalMeta.toFixed(2)} (${totalMeta > 0 ? ((totalGuardado / totalMeta) * 100).toFixed(0) : 0}%)\n`;
     }
 
     return analise;
@@ -493,8 +544,10 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
         (respostaIA.status === "ready_for_confirmation" && usuarioConfirmou) ||
         (currentStatusRef.current === "ready_for_confirmation" && usuarioConfirmou);
 
-      // Executar análise diretamente quando solicitada
-      const pedidoAnalise = currentIntentRef.current === "analyze_finances" && respostaIA.status === "collecting_data";
+      // Executar análise diretamente quando solicitada (sem precisar de confirmação)
+      const pedidoAnalise =
+        (currentIntentRef.current === "analyze_finances" || respostaIA.intent === "analyze_finances") &&
+        respostaIA.status !== "confirmed";
 
       if (deveExecutar || pedidoAnalise) {
         let resultado = "Ação realizada.";

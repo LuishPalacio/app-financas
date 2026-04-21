@@ -114,9 +114,9 @@ export default function CaixinhasScreen() {
     if (!session?.user?.id) return;
     try {
       const [resCaixinhas, resContas, resParceria] = await Promise.all([
-        supabase.from("caixinhas").select("*").eq("user_id", session.user.id),
-        supabase.from("contas").select("*").eq("user_id", session.user.id),
-        supabase.from("parcerias").select("id").eq("status", "aceito").or(
+        supabase.from("caixinhas").select("*"),  // RLS retorna próprias + compartilhadas do parceiro
+        supabase.from("contas").select("*"),      // RLS retorna próprias + compartilhadas do parceiro
+        supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
       ]);
