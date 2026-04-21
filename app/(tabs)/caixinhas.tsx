@@ -81,6 +81,7 @@ export default function CaixinhasScreen() {
   const [modalNovaVisivel, setModalNovaVisivel] = useState(false);
   const [nomeCaixinha, setNomeCaixinha] = useState("");
   const [metaValor, setMetaValor] = useState("");
+  const [saldoInicialCaixinha, setSaldoInicialCaixinha] = useState("");
   const [corSelecionada, setCorSelecionada] = useState(PALETA_CORES[0]);
   const [iconeSelecionado, setIconeSelecionado] = useState("savings");
   const [caixinhaCompartilhada, setCaixinhaCompartilhada] = useState(false);
@@ -138,16 +139,24 @@ export default function CaixinhasScreen() {
     const valorNum = parseFloat(metaValor.replace(",", "."));
     if (isNaN(valorNum) || valorNum < 1) return Alert.alert("Aviso", "A meta deve ser maior que R$ 1,00.");
 
+    const saldoInicial = saldoInicialCaixinha.trim()
+      ? parseFloat(saldoInicialCaixinha.replace(",", "."))
+      : 0;
+    if (isNaN(saldoInicial) || saldoInicial < 0)
+      return Alert.alert("Aviso", "Saldo inicial inválido.");
+    if (saldoInicial > valorNum)
+      return Alert.alert("Aviso", "O saldo inicial não pode ser maior que a meta.");
+
     const { error } = await supabase.from("caixinhas").insert([{
-      nome: nomeCaixinha, meta_valor: valorNum, saldo_atual: 0,
+      nome: nomeCaixinha, meta_valor: valorNum, saldo_atual: saldoInicial,
       cor: corSelecionada, icone: iconeSelecionado, user_id: session.user.id,
       compartilhado: caixinhaCompartilhada,
     }]);
 
     if (error) { Alert.alert("Erro", "Não foi possível criar a caixinha."); }
     else {
-      setNomeCaixinha(""); setMetaValor(""); setIconeSelecionado("savings");
-      setCaixinhaCompartilhada(false);
+      setNomeCaixinha(""); setMetaValor(""); setSaldoInicialCaixinha("");
+      setIconeSelecionado("savings"); setCaixinhaCompartilhada(false);
       setModalNovaVisivel(false); carregarDados();
     }
   };
@@ -507,6 +516,14 @@ export default function CaixinhasScreen() {
                 placeholder="Qual é o valor da meta? (Ex: 1500)"
                 value={metaValor}
                 onChangeText={setMetaValor}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                placeholderTextColor={Cores.textoSecundario}
+                placeholder="Saldo inicial (opcional, Ex: 200)"
+                value={saldoInicialCaixinha}
+                onChangeText={setSaldoInicialCaixinha}
                 keyboardType="numeric"
               />
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>

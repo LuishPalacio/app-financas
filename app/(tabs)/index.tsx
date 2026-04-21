@@ -524,7 +524,7 @@ export default function Dashboard() {
       if (isNaN(totalRepeticoes) || totalRepeticoes < 2) return Alert.alert("Aviso", "Número de parcelas inválido.");
       valorFinal = valorNum / totalRepeticoes;
     } else if (frequencia === "fixa") {
-      totalRepeticoes = 12;
+      totalRepeticoes = 60; // 5 anos — contínua até o usuário deletar a série
     }
 
     const statusBd = foiPago ? "paga" : "pendente";
@@ -978,7 +978,7 @@ export default function Dashboard() {
 
             <View style={styles.modalButtons}>
               <Button title="Cancelar" color="#999" onPress={() => setModalContaVisivel(false)} />
-              <Button title="Guardar" color="#457B9D" onPress={salvarConta} />
+              <Button title="Salvar" color="#457B9D" onPress={salvarConta} />
             </View>
           </View>
         </View>
@@ -1129,7 +1129,7 @@ export default function Dashboard() {
             </ScrollView>
             <View style={styles.modalButtons}>
               <Button title="Cancelar" color="#999" onPress={() => setModalCatVisivel(false)} />
-              <Button title="Guardar" color="#2A9D8F" onPress={salvarCategoria} />
+              <Button title="Salvar" color="#2A9D8F" onPress={salvarCategoria} />
             </View>
           </View>
         </View>
@@ -1275,7 +1275,7 @@ export default function Dashboard() {
 
               <View style={styles.modalButtons}>
                 <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} disabled={loadingTrans} />
-                <Button title={loadingTrans ? "Aguarde..." : "Guardar"} color="#2A9D8F" onPress={salvarTransacao} disabled={loadingTrans} />
+                <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color="#2A9D8F" onPress={salvarTransacao} disabled={loadingTrans} />
               </View>
             </ScrollView>
           </View>

@@ -703,20 +703,65 @@ export default function TransacoesScreen() {
 
       <Modal animationType="fade" transparent visible={modalFiltroCat} onRequestClose={() => setModalFiltroCat(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxHeight: "85%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Filtrar por Categoria</Text>
-            <View style={styles.wrapContainer}>
-              <TouchableOpacity style={[styles.filterPill, { backgroundColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.borda }]} onPress={() => setFiltroCategorias([])}>
-                <Text style={[styles.filterPillText, { color: filtroCategorias.length === 0 ? "#FFF" : Cores.textoPrincipal }]}>Todas</Text>
-              </TouchableOpacity>
-              {categorias.filter((c) => c.ativa !== 0).map((c) => (
-                <TouchableOpacity key={`fcat-${c.id}`} style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]} onPress={() => toggleFiltroCategoria(c.id)}>
-                  <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(c.id) ? "#FFF" : c.cor }]} />
-                  <Text style={[styles.filterPillText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Todas */}
+              <View style={[styles.wrapContainer, { marginBottom: 8 }]}>
+                <TouchableOpacity
+                  style={[styles.filterPill, { backgroundColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.borda }]}
+                  onPress={() => setFiltroCategorias([])}
+                >
+                  <Text style={[styles.filterPillText, { color: filtroCategorias.length === 0 ? "#FFF" : Cores.textoPrincipal }]}>Todas</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#2A9D8F" }]} onPress={() => setModalFiltroCat(false)}>
+              </View>
+
+              {/* Receitas */}
+              {categorias.filter((c) => c.ativa !== 0 && c.tipo === "receita").length > 0 && (
+                <>
+                  <View style={styles.catSecaoHeader}>
+                    <MaterialIcons name="arrow-upward" size={13} color="#2A9D8F" />
+                    <Text style={[styles.catSecaoTitulo, { color: "#2A9D8F" }]}>Receitas</Text>
+                  </View>
+                  <View style={[styles.wrapContainer, { marginBottom: 12 }]}>
+                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === "receita").map((c) => (
+                      <TouchableOpacity
+                        key={`fcat-${c.id}`}
+                        style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
+                        onPress={() => toggleFiltroCategoria(c.id)}
+                      >
+                        <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(c.id) ? "#FFF" : c.cor }]} />
+                        <Text style={[styles.filterPillText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* Despesas */}
+              {categorias.filter((c) => c.ativa !== 0 && c.tipo === "despesa").length > 0 && (
+                <>
+                  <View style={styles.catSecaoHeader}>
+                    <MaterialIcons name="arrow-downward" size={13} color="#E76F51" />
+                    <Text style={[styles.catSecaoTitulo, { color: "#E76F51" }]}>Despesas</Text>
+                  </View>
+                  <View style={[styles.wrapContainer, { marginBottom: 12 }]}>
+                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === "despesa").map((c) => (
+                      <TouchableOpacity
+                        key={`fcat-${c.id}`}
+                        style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
+                        onPress={() => toggleFiltroCategoria(c.id)}
+                      >
+                        <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(c.id) ? "#FFF" : c.cor }]} />
+                        <Text style={[styles.filterPillText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#2A9D8F", marginTop: 12 }]} onPress={() => setModalFiltroCat(false)}>
               <Text style={styles.modalBotaoTexto}>Aplicar</Text>
             </TouchableOpacity>
           </View>
@@ -795,4 +840,6 @@ const styles = StyleSheet.create({
   colorDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   modalBotaoAplicar: { paddingVertical: 12, borderRadius: 10, alignItems: "center" },
   modalBotaoTexto: { fontSize: 15, fontWeight: "700", color: "#FFF" },
+  catSecaoHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: "#33333322" },
+  catSecaoTitulo: { fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
 });
