@@ -8,6 +8,7 @@ import { Component, ReactNode } from "react";
 import { StatusBar } from "expo-status-bar";
 import { Alert, useColorScheme } from "react-native";
 import "react-native-reanimated";
+import * as Linking from "expo-linking";
 
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -77,6 +78,21 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
+  // DEEP LINK — intercepta links do email (recuperação de senha, confirmação)
+  const url = Linking.useURL();
+  useEffect(() => {
+    if (!url) return;
+    const fragment = url.split("#")[1];
+    if (!fragment) return;
+    const params = Object.fromEntries(new URLSearchParams(fragment));
+    if (params.access_token && params.refresh_token) {
+      supabase.auth.setSession({
+        access_token: params.access_token,
+        refresh_token: params.refresh_token,
+      });
+    }
+  }, [url]);
+
   // 1. OLHEIRO DE ATUALIZAÇÕES (OTA Updates)
   useEffect(() => {
     async function verificarAtualizacao() {
@@ -119,8 +135,14 @@ export default function RootLayout() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === "PASSWORD_RECOVERY") {
+        router.replace("/reset-password");
+      }
+      if (event === "SIGNED_IN" && url?.includes("email-confirmed")) {
+        router.replace("/email-confirmed");
+      }
     });
 
     // Boa prática: limpa o escutador quando o componente for desmontado
@@ -134,8 +156,10 @@ export default function RootLayout() {
     if (!isReady || !isAuthReady) return;
 
     const inAuthGroup = segments[0] === "login";
+    const inSpecialFlow =
+      segments[0] === "reset-password" || segments[0] === "email-confirmed";
 
-    if (!session && !inAuthGroup) {
+    if (!session && !inAuthGroup && !inSpecialFlow) {
       router.replace("/login");
     } else if (session && inAuthGroup) {
       router.replace("/(tabs)");
@@ -248,6 +272,8 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="reset-password" options={{ headerShown: false }} />
+          <Stack.Screen name="email-confirmed" options={{ headerShown: false }} />
         </Stack>
         <StatusBar style={isDark ? "light" : "dark"} />
       </ThemeProvider>

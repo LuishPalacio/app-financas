@@ -48,38 +48,57 @@ export default function LoginScreen() {
         setSegundosRestantes(restante);
       }
     }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [bloqueadoAte]);
 
-  const validarEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+  const validarEmail = (e: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
   const formatarTelefone = (valor: string) => {
     const nums = valor.replace(/\D/g, "").slice(0, 11);
     if (nums.length <= 2) return nums;
     if (nums.length <= 7) return `(${nums.slice(0, 2)}) ${nums.slice(2)}`;
-    if (nums.length <= 11) return `(${nums.slice(0, 2)}) ${nums.slice(2, 7)}-${nums.slice(7)}`;
+    if (nums.length <= 11)
+      return `(${nums.slice(0, 2)}) ${nums.slice(2, 7)}-${nums.slice(7)}`;
     return valor;
   };
 
   async function signInWithEmail() {
     if (bloqueadoAte && Date.now() < bloqueadoAte)
-      return Alert.alert("Aguarde", `Muitas tentativas. Tente novamente em ${segundosRestantes}s.`);
+      return Alert.alert(
+        "Aguarde",
+        `Muitas tentativas. Tente novamente em ${segundosRestantes}s.`,
+      );
     if (!email || !password)
       return Alert.alert("Aviso", "Preencha email e senha.");
     if (!validarEmail(email))
-      return Alert.alert("Aviso", "Digite um e-mail válido (ex: nome@dominio.com).");
+      return Alert.alert(
+        "Aviso",
+        "Digite um e-mail válido (ex: nome@dominio.com).",
+      );
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) {
       const novasTentativas = tentativasFalhadas + 1;
       setTentativasFalhadas(novasTentativas);
       if (novasTentativas >= 3) {
         setBloqueadoAte(Date.now() + 30000);
-        Alert.alert("Bloqueado", "3 tentativas incorretas. Aguarde 30 segundos.");
+        Alert.alert(
+          "Bloqueado",
+          "3 tentativas incorretas. Aguarde 30 segundos.",
+        );
       } else {
-        Alert.alert("Erro ao entrar", `${error.message} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`);
+        Alert.alert(
+          "Erro ao entrar",
+          `${error.message} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`,
+        );
       }
     } else {
       router.replace("/(tabs)");
@@ -89,21 +108,34 @@ export default function LoginScreen() {
 
   async function signUpWithEmail() {
     if (!nome || !email || !password)
-      return Alert.alert("Aviso", "Preencha todos os campos obrigatórios (Nome, E-mail e Senha).");
+      return Alert.alert(
+        "Aviso",
+        "Preencha todos os campos obrigatórios (Nome, E-mail e Senha).",
+      );
     if (!validarEmail(email))
-      return Alert.alert("Aviso", "Digite um e-mail válido (ex: nome@dominio.com).");
+      return Alert.alert(
+        "Aviso",
+        "Digite um e-mail válido (ex: nome@dominio.com).",
+      );
 
     if (password !== confirmPassword)
-      return Alert.alert("Senhas diferentes", "A senha e a confirmação não conferem. Verifique e tente novamente.");
+      return Alert.alert(
+        "Senhas diferentes",
+        "A senha e a confirmação não conferem. Verifique e tente novamente.",
+      );
 
     if (password.length < 6)
-      return Alert.alert("Senha fraca", "A senha deve ter pelo menos 6 caracteres.");
+      return Alert.alert(
+        "Senha fraca",
+        "A senha deve ter pelo menos 6 caracteres.",
+      );
 
     setLoading(true);
     const { error } = await supabase.auth.signUp({
       email: email,
       password: password,
       options: {
+        emailRedirectTo: "meuappfinancas://email-confirmed",
         data: {
           nome_usuario: nome,
           telefone: telefone.trim(),
@@ -129,10 +161,15 @@ export default function LoginScreen() {
 
   async function recuperarSenha() {
     if (!email)
-      return Alert.alert("Aviso", "Digite o seu e-mail no campo acima para enviarmos o link de recuperação.");
+      return Alert.alert(
+        "Aviso",
+        "Digite o seu e-mail no campo acima para enviarmos o link de recuperação.",
+      );
 
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "meuappfinancas://reset-password",
+    });
     setLoading(false);
 
     if (error) {
@@ -163,183 +200,227 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <View style={styles.iconContainer}>
-            <Image
-              source={require("../assets/images/icon.png")}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* LOGO */}
+        <View style={styles.iconContainer}>
+          <Image
+            source={require("../assets/images/icon.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
+
+        <Text style={styles.title}>FinFlow</Text>
+        <Text style={styles.subtitle}>
+          {isRecuperandoSenha
+            ? "Recuperação de Acesso"
+            : isLogin
+              ? "Bem-vindo de volta!"
+              : "Crie sua conta para começar"}
+        </Text>
+
+        {isRecuperandoSenha && (
+          <View style={styles.recuperacaoBadge}>
+            <MaterialIcons name="lock-reset" size={16} color="#E76F51" />
+            <Text style={styles.recuperacaoTexto}>Recuperação de senha</Text>
           </View>
+        )}
 
-          <Text style={styles.title}>FinFlow</Text>
-          <Text style={styles.subtitle}>
-            {isRecuperandoSenha
-              ? "Recuperação de Acesso"
-              : isLogin
-                ? "Bem-vindo de volta!"
-                : "Crie sua conta para começar"}
-          </Text>
-
-          {isRecuperandoSenha && (
-            <View style={styles.recuperacaoBadge}>
-              <MaterialIcons name="lock-reset" size={16} color="#E76F51" />
-              <Text style={styles.recuperacaoTexto}>Recuperação de senha</Text>
-            </View>
-          )}
-
-          {/* NOME — só no cadastro */}
-          {!isLogin && !isRecuperandoSenha && (
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="person" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Seu Nome (Ex: Luis)"
-                placeholderTextColor="#999"
-                onChangeText={setNome}
-                value={nome}
-                autoCapitalize="words"
-              />
-            </View>
-          )}
-
-          {/* EMAIL — sempre visível */}
+        {/* NOME — só no cadastro */}
+        {!isLogin && !isRecuperandoSenha && (
           <View style={styles.inputContainer}>
-            <MaterialIcons name="email" size={20} color="#666" style={styles.inputIcon} />
+            <MaterialIcons
+              name="person"
+              size={20}
+              color="#666"
+              style={styles.inputIcon}
+            />
             <TextInput
               style={styles.input}
-              placeholder="Seu E-mail"
+              placeholder="Seu Nome (Ex: Luis)"
               placeholderTextColor="#999"
-              onChangeText={setEmail}
-              value={email}
-              autoCapitalize="none"
-              keyboardType="email-address"
+              onChangeText={setNome}
+              value={nome}
+              autoCapitalize="words"
             />
           </View>
+        )}
 
-          {/* TELEFONE — só no cadastro */}
-          {!isLogin && !isRecuperandoSenha && (
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="phone" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Telefone (Ex: 11 99999-9999)"
-                placeholderTextColor="#999"
-                onChangeText={(v) => setTelefone(formatarTelefone(v))}
-                value={telefone}
-                keyboardType="phone-pad"
+        {/* EMAIL — sempre visível */}
+        <View style={styles.inputContainer}>
+          <MaterialIcons
+            name="email"
+            size={20}
+            color="#666"
+            style={styles.inputIcon}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Seu E-mail"
+            placeholderTextColor="#999"
+            onChangeText={setEmail}
+            value={email}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+        </View>
+
+        {/* TELEFONE — só no cadastro */}
+        {!isLogin && !isRecuperandoSenha && (
+          <View style={styles.inputContainer}>
+            <MaterialIcons
+              name="phone"
+              size={20}
+              color="#666"
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Telefone (Ex: 11 99999-9999)"
+              placeholderTextColor="#999"
+              onChangeText={(v) => setTelefone(formatarTelefone(v))}
+              value={telefone}
+              keyboardType="phone-pad"
+            />
+          </View>
+        )}
+
+        {/* SENHA — visível quando não está recuperando */}
+        {!isRecuperandoSenha && (
+          <View style={styles.inputContainer}>
+            <MaterialIcons
+              name="lock"
+              size={20}
+              color="#666"
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Sua Senha"
+              placeholderTextColor="#999"
+              onChangeText={setPassword}
+              value={password}
+              secureTextEntry={!mostrarSenha}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              onPress={() => setMostrarSenha((v) => !v)}
+              style={styles.olhoBtn}
+            >
+              <MaterialIcons
+                name={mostrarSenha ? "visibility-off" : "visibility"}
+                size={20}
+                color="#666"
               />
-            </View>
-          )}
+            </TouchableOpacity>
+          </View>
+        )}
 
-          {/* SENHA — visível quando não está recuperando */}
-          {!isRecuperandoSenha && (
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="lock" size={20} color="#666" style={styles.inputIcon} />
+        {/* CONFIRMAR SENHA — só no cadastro */}
+        {!isLogin && !isRecuperandoSenha && (
+          <>
+            <View
+              style={[
+                styles.inputContainer,
+                confirmPassword.length > 0 &&
+                  password !== confirmPassword &&
+                  styles.inputContainerErro,
+              ]}
+            >
+              <MaterialIcons
+                name="lock-outline"
+                size={20}
+                color="#666"
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
-                placeholder="Sua Senha"
+                placeholder="Confirmar Senha"
                 placeholderTextColor="#999"
-                onChangeText={setPassword}
-                value={password}
-                secureTextEntry={!mostrarSenha}
+                onChangeText={setConfirmPassword}
+                value={confirmPassword}
+                secureTextEntry={!mostrarConfirmSenha}
                 autoCapitalize="none"
               />
-              <TouchableOpacity onPress={() => setMostrarSenha((v) => !v)} style={styles.olhoBtn}>
+              <TouchableOpacity
+                onPress={() => setMostrarConfirmSenha((v) => !v)}
+                style={styles.olhoBtn}
+              >
                 <MaterialIcons
-                  name={mostrarSenha ? "visibility-off" : "visibility"}
+                  name={mostrarConfirmSenha ? "visibility-off" : "visibility"}
                   size={20}
                   color="#666"
                 />
               </TouchableOpacity>
             </View>
-          )}
-
-          {/* CONFIRMAR SENHA — só no cadastro */}
-          {!isLogin && !isRecuperandoSenha && (
-            <>
-              <View style={[
-                styles.inputContainer,
-                confirmPassword.length > 0 && password !== confirmPassword && styles.inputContainerErro,
-              ]}>
-                <MaterialIcons name="lock-outline" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirmar Senha"
-                  placeholderTextColor="#999"
-                  onChangeText={setConfirmPassword}
-                  value={confirmPassword}
-                  secureTextEntry={!mostrarConfirmSenha}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity onPress={() => setMostrarConfirmSenha((v) => !v)} style={styles.olhoBtn}>
-                  <MaterialIcons
-                    name={mostrarConfirmSenha ? "visibility-off" : "visibility"}
-                    size={20}
-                    color="#666"
-                  />
-                </TouchableOpacity>
-              </View>
-              {confirmPassword.length > 0 && password !== confirmPassword && (
-                <Text style={styles.erroSenha}>As senhas não conferem</Text>
-              )}
-              {confirmPassword.length > 0 && password === confirmPassword && (
-                <Text style={styles.senhaOk}>Senhas conferem ✓</Text>
-              )}
-            </>
-          )}
-
-          {/* BOTÃO PRINCIPAL */}
-          <TouchableOpacity
-            style={[styles.mainButton, (loading || !!bloqueadoAte) && styles.buttonDisabled]}
-            onPress={
-              isRecuperandoSenha
-                ? recuperarSenha
-                : isLogin
-                  ? signInWithEmail
-                  : signUpWithEmail
-            }
-            disabled={loading || !!bloqueadoAte}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFF" />
-            ) : bloqueadoAte ? (
-              <Text style={styles.mainButtonText}>Aguarde {segundosRestantes}s</Text>
-            ) : (
-              <Text style={styles.mainButtonText}>
-                {isRecuperandoSenha
-                  ? "Enviar Link de Recuperação"
-                  : isLogin
-                    ? "Entrar"
-                    : "Criar Conta"}
-              </Text>
+            {confirmPassword.length > 0 && password !== confirmPassword && (
+              <Text style={styles.erroSenha}>As senhas não conferem</Text>
             )}
-          </TouchableOpacity>
+            {confirmPassword.length > 0 && password === confirmPassword && (
+              <Text style={styles.senhaOk}>Senhas conferem ✓</Text>
+            )}
+          </>
+        )}
 
-          {/* ESQUECI A SENHA — só no login */}
-          {isLogin && !isRecuperandoSenha && (
-            <TouchableOpacity
-              style={{ marginTop: 15, alignItems: "center" }}
-              onPress={() => setIsRecuperandoSenha(true)}
-            >
-              <Text style={{ color: "#E76F51", fontSize: 14, fontWeight: "bold" }}>
-                Esqueci minha senha
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {/* TROCAR TELA */}
-          <TouchableOpacity style={styles.switchButton} onPress={trocarTela}>
-            <Text style={styles.switchButtonText}>
+        {/* BOTÃO PRINCIPAL */}
+        <TouchableOpacity
+          style={[
+            styles.mainButton,
+            (loading || !!bloqueadoAte) && styles.buttonDisabled,
+          ]}
+          onPress={
+            isRecuperandoSenha
+              ? recuperarSenha
+              : isLogin
+                ? signInWithEmail
+                : signUpWithEmail
+          }
+          disabled={loading || !!bloqueadoAte}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFF" />
+          ) : bloqueadoAte ? (
+            <Text style={styles.mainButtonText}>
+              Aguarde {segundosRestantes}s
+            </Text>
+          ) : (
+            <Text style={styles.mainButtonText}>
               {isRecuperandoSenha
-                ? "Voltar para o Login"
+                ? "Enviar Link de Recuperação"
                 : isLogin
-                  ? "Não tem uma conta? Crie aqui."
-                  : "Já tem uma conta? Faça login."}
+                  ? "Entrar"
+                  : "Criar Conta"}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* ESQUECI A SENHA — só no login */}
+        {isLogin && !isRecuperandoSenha && (
+          <TouchableOpacity
+            style={{ marginTop: 12, alignItems: "center" }}
+            onPress={() => setIsRecuperandoSenha(true)}
+          >
+            <Text
+              style={{ color: "#E76F51", fontSize: 14, fontWeight: "bold" }}
+            >
+              Esqueci minha senha
             </Text>
           </TouchableOpacity>
-        </View>
+        )}
+
+        {/* TROCAR TELA */}
+        <TouchableOpacity style={styles.switchButton} onPress={trocarTela}>
+          <Text style={styles.switchButtonText}>
+            {isRecuperandoSenha
+              ? "Voltar para o Login"
+              : isLogin
+                ? "Não tem uma conta? Crie aqui."
+                : "Já tem uma conta? Faça login."}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -352,23 +433,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    padding: 20,
-  },
-  card: {
-    backgroundColor: "#1E1E1E",
-    padding: 30,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#333",
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
+    paddingTop: 48,
+    paddingHorizontal: 28,
+    paddingBottom: 36,
   },
   iconContainer: { alignItems: "center", marginBottom: 8 },
-  logo: { width: 200, height: 200 },
+  logo: { width: 220, height: 220 },
   recuperacaoBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -383,24 +453,24 @@ const styles = StyleSheet.create({
   },
   recuperacaoTexto: { color: "#E76F51", fontSize: 13, fontWeight: "600" },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: "bold",
     color: "#FFF",
     textAlign: "center",
-    marginBottom: 5,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: "#AAA",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 28,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#2C2C2C",
     borderRadius: 10,
-    marginBottom: 15,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#444",
   },
@@ -433,6 +503,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { backgroundColor: "#444" },
   mainButtonText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
-  switchButton: { marginTop: 25, alignItems: "center" },
+  switchButton: { marginTop: 20, alignItems: "center" },
   switchButtonText: { color: "#F4A261", fontSize: 14, fontWeight: "600" },
 });
