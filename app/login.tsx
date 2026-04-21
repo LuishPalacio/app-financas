@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
   },
   iconContainer: { alignItems: "center", marginBottom: 8 },
-  logo: { width: 110, height: 110 },
+  logo: { width: 200, height: 200 },
   recuperacaoBadge: {
     flexDirection: "row",
     alignItems: "center",
