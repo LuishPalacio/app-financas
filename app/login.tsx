@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -165,10 +166,10 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <View style={styles.iconContainer}>
-            <MaterialIcons
-              name={isRecuperandoSenha ? "lock-reset" : "account-balance-wallet"}
-              size={60}
-              color="#2A9D8F"
+            <Image
+              source={require("../assets/images/icon.png")}
+              style={styles.logo}
+              resizeMode="contain"
             />
           </View>
 
@@ -180,6 +181,13 @@ export default function LoginScreen() {
                 ? "Bem-vindo de volta!"
                 : "Crie sua conta para começar"}
           </Text>
+
+          {isRecuperandoSenha && (
+            <View style={styles.recuperacaoBadge}>
+              <MaterialIcons name="lock-reset" size={16} color="#E76F51" />
+              <Text style={styles.recuperacaoTexto}>Recuperação de senha</Text>
+            </View>
+          )}
 
           {/* NOME — só no cadastro */}
           {!isLogin && !isRecuperandoSenha && (
@@ -359,7 +367,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 5,
   },
-  iconContainer: { alignItems: "center", marginBottom: 20 },
+  iconContainer: { alignItems: "center", marginBottom: 8 },
+  logo: { width: 110, height: 110 },
+  recuperacaoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#E76F5122",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginBottom: 20,
+    alignSelf: "center",
+  },
+  recuperacaoTexto: { color: "#E76F51", fontSize: 13, fontWeight: "600" },
   title: {
     fontSize: 28,
     fontWeight: "bold",
@@ -371,7 +393,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#AAA",
     textAlign: "center",
-    marginBottom: 30,
+    marginBottom: 20,
   },
   inputContainer: {
     flexDirection: "row",
