@@ -193,11 +193,11 @@ export default function RelatoriosScreen() {
 
       {/* ACCOUNT FILTER */}
       {contas.length > 0 && (
+        <View style={styles.contasFiltroWrap}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={styles.contasFiltroScroll}
-          contentContainerStyle={{ paddingHorizontal: 15, gap: 8, alignItems: "center" }}
+          contentContainerStyle={{ paddingHorizontal: 15, gap: 8, paddingVertical: 4 }}
         >
           {/* Todas */}
           <TouchableOpacity
@@ -241,6 +241,7 @@ export default function RelatoriosScreen() {
             );
           })}
         </ScrollView>
+        </View>
       )}
 
       {/* YEAR NAV */}
@@ -567,7 +568,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 4 },
 
-  contasFiltroScroll: { height: 46, marginBottom: 4 },
+  contasFiltroWrap: { height: 46, marginBottom: 4 },
   contaChip: {
     flexDirection: "row",
     alignItems: "center",
