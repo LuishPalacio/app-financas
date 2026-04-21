@@ -5,11 +5,9 @@ import {
 } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { Component, ReactNode } from "react";
-import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { Alert, useColorScheme } from "react-native";
 import "react-native-reanimated";
-import { initializeDatabase } from "../database/initDB";
 
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -246,15 +244,13 @@ export default function RootLayout() {
         session,
       }}
     >
-      <SQLiteProvider databaseName="quimera_v4.db" onInit={initializeDatabase}>
-        <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="login" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          </Stack>
-          <StatusBar style={isDark ? "light" : "dark"} />
-        </ThemeProvider>
-      </SQLiteProvider>
+      <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        </Stack>
+        <StatusBar style={isDark ? "light" : "dark"} />
+      </ThemeProvider>
     </ThemeContext.Provider>
     </ErrorBoundary>
   );

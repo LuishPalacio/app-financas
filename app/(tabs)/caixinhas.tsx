@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -23,6 +24,7 @@ interface Caixinha {
   saldo_atual: number;
   cor: string;
   icone: string;
+  compartilhado?: boolean;
 }
 
 interface Conta {
@@ -73,6 +75,7 @@ export default function CaixinhasScreen() {
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
+  const [temParceiro, setTemParceiro] = useState(false);
 
   // Modal nova caixinha
   const [modalNovaVisivel, setModalNovaVisivel] = useState(false);
@@ -80,6 +83,7 @@ export default function CaixinhasScreen() {
   const [metaValor, setMetaValor] = useState("");
   const [corSelecionada, setCorSelecionada] = useState(PALETA_CORES[0]);
   const [iconeSelecionado, setIconeSelecionado] = useState("savings");
+  const [caixinhaCompartilhada, setCaixinhaCompartilhada] = useState(false);
 
   // Modal opções (click no card)
   const [modalOpcoesVisivel, setModalOpcoesVisivel] = useState(false);
@@ -109,12 +113,16 @@ export default function CaixinhasScreen() {
   const carregarDados = async () => {
     if (!session?.user?.id) return;
     try {
-      const [resCaixinhas, resContas] = await Promise.all([
+      const [resCaixinhas, resContas, resParceria] = await Promise.all([
         supabase.from("caixinhas").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*").eq("user_id", session.user.id),
+        supabase.from("parcerias").select("id").eq("status", "aceito").or(
+          `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
+        ),
       ]);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
       if (resContas.data) setContas(resContas.data);
+      setTemParceiro(resParceria.data ? resParceria.data.length > 0 : false);
     } catch (error) {
       console.error(error);
     }
@@ -133,11 +141,13 @@ export default function CaixinhasScreen() {
     const { error } = await supabase.from("caixinhas").insert([{
       nome: nomeCaixinha, meta_valor: valorNum, saldo_atual: 0,
       cor: corSelecionada, icone: iconeSelecionado, user_id: session.user.id,
+      compartilhado: caixinhaCompartilhada,
     }]);
 
     if (error) { Alert.alert("Erro", "Não foi possível criar a caixinha."); }
     else {
       setNomeCaixinha(""); setMetaValor(""); setIconeSelecionado("savings");
+      setCaixinhaCompartilhada(false);
       setModalNovaVisivel(false); carregarDados();
     }
   };
@@ -469,6 +479,21 @@ export default function CaixinhasScreen() {
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Novo Objetivo</Text>
+
+              {temParceiro && (
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: 12, backgroundColor: Cores.pillFundo, borderRadius: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
+                    <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Objetivo Conjunto?</Text>
+                  </View>
+                  <Switch
+                    value={caixinhaCompartilhada}
+                    onValueChange={setCaixinhaCompartilhada}
+                    trackColor={{ false: "#767577", true: "#E76F51" }}
+                  />
+                </View>
+              )}
+
               <TextInput
                 style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
                 placeholderTextColor={Cores.textoSecundario}

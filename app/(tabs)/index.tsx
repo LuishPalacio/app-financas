@@ -358,19 +358,42 @@ export default function Dashboard() {
     ]);
   };
 
-  const deletarCategoria = (cat: Categoria) => {
-    Alert.alert("Apagar Categoria", `Tem certeza que deseja apagar "${cat.nome}"? Transações vinculadas perderão a categoria.`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Apagar",
-        style: "destructive",
-        onPress: async () => {
-          await supabase.from("categorias").delete().eq("id", cat.id);
-          if (catEditando?.id === cat.id) setCatEditando(null);
-          carregarDados();
+  const deletarCategoria = async (cat: Categoria) => {
+    const { count } = await supabase
+      .from("transacoes")
+      .select("id", { count: "exact", head: true })
+      .eq("categoria_id", cat.id);
+
+    if (count && count > 0) {
+      Alert.alert(
+        "Categoria com Lançamentos",
+        `A categoria "${cat.nome}" possui ${count} transação(ões) vinculada(s) e não pode ser apagada.\n\nDeseja arquivá-la em vez disso?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Arquivar",
+            onPress: async () => {
+              await supabase.from("categorias").update({ ativa: 0 }).eq("id", cat.id);
+              if (catEditando?.id === cat.id) setCatEditando(null);
+              carregarDados();
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert("Apagar Categoria", `Tem certeza que deseja apagar "${cat.nome}"?`, [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Apagar",
+          style: "destructive",
+          onPress: async () => {
+            await supabase.from("categorias").delete().eq("id", cat.id);
+            if (catEditando?.id === cat.id) setCatEditando(null);
+            carregarDados();
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   // --- Ações de Conta ---
@@ -419,6 +442,13 @@ export default function Dashboard() {
     setModalEditarContaVisivel(false);
     setContaEditando(null);
     setEditandoSaldoConta(false);
+    carregarDados();
+  };
+
+  const desarquivarConta = async (conta: Conta) => {
+    const { error } = await supabase.from("contas").update({ arquivado: false }).eq("id", conta.id);
+    if (error) return Alert.alert("Erro", `Falha ao desarquivar: ${error.message}`);
+    setModalEditarContaVisivel(false);
     carregarDados();
   };
 
@@ -869,14 +899,24 @@ export default function Dashboard() {
                 />
               )}
 
-              {/* Arquivar */}
-              <TouchableOpacity
-                style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: "#F4A261" }]}
-                onPress={() => contaEditando && arquivarConta(contaEditando)}
-              >
-                <MaterialIcons name="archive" size={18} color="#FFF" />
-                <Text style={styles.botaoApagarTexto}>Arquivar Conta</Text>
-              </TouchableOpacity>
+              {/* Arquivar / Desarquivar */}
+              {contaEditando?.arquivado ? (
+                <TouchableOpacity
+                  style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: "#2A9D8F" }]}
+                  onPress={() => contaEditando && desarquivarConta(contaEditando)}
+                >
+                  <MaterialIcons name="unarchive" size={18} color="#FFF" />
+                  <Text style={styles.botaoApagarTexto}>Desarquivar Conta</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: "#F4A261" }]}
+                  onPress={() => contaEditando && arquivarConta(contaEditando)}
+                >
+                  <MaterialIcons name="archive" size={18} color="#FFF" />
+                  <Text style={styles.botaoApagarTexto}>Arquivar Conta</Text>
+                </TouchableOpacity>
+              )}
 
               <View style={styles.modalButtons}>
                 <Button title="Cancelar" color="#999" onPress={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }} />

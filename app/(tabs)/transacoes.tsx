@@ -1,12 +1,16 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
+  Button,
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -91,6 +95,17 @@ export default function TransacoesScreen() {
   const [modalFiltroCat, setModalFiltroCat] = useState(false);
   const [modalFiltroTipo, setModalFiltroTipo] = useState(false);
 
+  // Edit transaction modal
+  const [modalEditarTransVisivel, setModalEditarTransVisivel] = useState(false);
+  const [transacaoEditando, setTransacaoEditando] = useState<Transacao | null>(null);
+  const [editDescricao, setEditDescricao] = useState("");
+  const [editValor, setEditValor] = useState("");
+  const [editData, setEditData] = useState(new Date());
+  const [editStatus, setEditStatus] = useState<"paga" | "pendente">("paga");
+  const [editCategoriaId, setEditCategoriaId] = useState<number | null>(null);
+  const [editContaId, setEditContaId] = useState<number | null>(null);
+  const [mostrarCalendarioEdit, setMostrarCalendarioEdit] = useState(false);
+
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
   const mesAtualIdx = hoje.getMonth();
@@ -131,39 +146,118 @@ export default function TransacoesScreen() {
     }, 150);
   }, [session]));
 
-  const deletarTransacao = async (id: number) => {
-    Alert.alert("Excluir", "Tem certeza que deseja apagar esta transação?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Apagar",
-        style: "destructive",
-        onPress: async () => {
-          const transacao = transacoes.find((t) => t.id === id);
-          const { error } = await supabase.from("transacoes").delete().eq("id", id);
-          if (error) { Alert.alert("Erro", "Não foi possível apagar a transação."); return; }
+  const executarDeleteUma = async (transacao: Transacao) => {
+    const { error } = await supabase.from("transacoes").delete().eq("id", transacao.id);
+    if (error) { Alert.alert("Erro", "Não foi possível apagar a transação."); return; }
 
-          if (transacao) {
-            const descricao = transacao.descricao ?? "";
-            let nomeCaixinha: string | null = null;
-            let operacao: "reverter_guardar" | "reverter_resgatar" | null = null;
+    const descricao = transacao.descricao ?? "";
+    let nomeCaixinha: string | null = null;
+    let operacao: "reverter_guardar" | "reverter_resgatar" | null = null;
 
-            if (descricao.startsWith("Guardar em: ")) { nomeCaixinha = descricao.replace("Guardar em: ", "").trim(); operacao = "reverter_guardar"; }
-            else if (descricao.startsWith("Resgate de: ")) { nomeCaixinha = descricao.replace("Resgate de: ", "").trim(); operacao = "reverter_resgatar"; }
+    if (descricao.startsWith("Guardar em: ")) { nomeCaixinha = descricao.replace("Guardar em: ", "").trim(); operacao = "reverter_guardar"; }
+    else if (descricao.startsWith("Resgate de: ")) { nomeCaixinha = descricao.replace("Resgate de: ", "").trim(); operacao = "reverter_resgatar"; }
 
-            if (nomeCaixinha && operacao) {
-              const { data: caixinhaData } = await supabase.from("caixinhas").select("id, saldo_atual").ilike("nome", nomeCaixinha).single();
-              if (caixinhaData) {
-                const novoSaldo = operacao === "reverter_guardar"
-                  ? Math.max(0, Number(caixinhaData.saldo_atual) - Number(transacao.valor))
-                  : Number(caixinhaData.saldo_atual) + Number(transacao.valor);
-                await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaData.id);
+    if (nomeCaixinha && operacao) {
+      const { data: caixinhaData } = await supabase.from("caixinhas").select("id, saldo_atual").ilike("nome", nomeCaixinha).single();
+      if (caixinhaData) {
+        const novoSaldo = operacao === "reverter_guardar"
+          ? Math.max(0, Number(caixinhaData.saldo_atual) - Number(transacao.valor))
+          : Number(caixinhaData.saldo_atual) + Number(transacao.valor);
+        await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaData.id);
+      }
+    }
+    carregarDados();
+  };
+
+  const deletarSerie = async (base: string, tipo: "fixa" | "parcelada", totalParcelas?: string) => {
+    if (tipo === "fixa") {
+      const { error } = await supabase.from("transacoes")
+        .delete()
+        .eq("user_id", session.user.id)
+        .eq("descricao", `${base} (Fixa)`);
+      if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
+    } else {
+      const idsParaDeletar = transacoes
+        .filter((t) => {
+          const m = t.descricao.match(/^(.+) \(\d+\/(\d+)\)$/);
+          return m && m[1] === base && m[2] === totalParcelas;
+        })
+        .map((t) => t.id);
+      if (idsParaDeletar.length === 0) return;
+      const { error } = await supabase.from("transacoes").delete().in("id", idsParaDeletar);
+      if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
+    }
+    carregarDados();
+  };
+
+  const deletarTransacao = (id: number) => {
+    const transacao = transacoes.find((t) => t.id === id);
+    if (!transacao) return;
+
+    const descricao = transacao.descricao ?? "";
+    const isFixa = / \(Fixa\)$/.test(descricao);
+    const parceladaMatch = descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
+
+    if (isFixa || parceladaMatch) {
+      Alert.alert(
+        "Apagar Agendamento",
+        "Esta transação faz parte de uma série recorrente. O que deseja apagar?",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Apenas esta", onPress: () => executarDeleteUma(transacao) },
+          {
+            text: "Toda a série",
+            style: "destructive",
+            onPress: () => {
+              if (isFixa) {
+                const base = descricao.replace(/ \(Fixa\)$/, "");
+                deletarSerie(base, "fixa");
+              } else if (parceladaMatch) {
+                deletarSerie(parceladaMatch[1], "parcelada", parceladaMatch[3]);
               }
-            }
-          }
-          carregarDados();
-        },
-      },
-    ]);
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert("Excluir", "Tem certeza que deseja apagar esta transação?", [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Apagar", style: "destructive", onPress: () => executarDeleteUma(transacao) },
+      ]);
+    }
+  };
+
+  const abrirEditarTransacao = (t: Transacao) => {
+    setTransacaoEditando(t);
+    setEditDescricao(t.descricao);
+    setEditValor(String(t.valor));
+    const partes = (t.data_vencimento || new Date().toISOString().split("T")[0]).split("-");
+    setEditData(new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2])));
+    setEditStatus(t.status === "paga" ? "paga" : "pendente");
+    setEditCategoriaId(t.categoria_id);
+    setEditContaId(t.conta_id);
+    setModalEditarTransVisivel(true);
+  };
+
+  const salvarEdicaoTransacao = async () => {
+    if (!transacaoEditando) return;
+    const valorNum = parseFloat(editValor.replace(",", "."));
+    if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
+    const dataFormatada = `${editData.getFullYear()}-${String(editData.getMonth() + 1).padStart(2, "0")}-${String(editData.getDate()).padStart(2, "0")}`;
+
+    const { error } = await supabase.from("transacoes").update({
+      descricao: editDescricao,
+      valor: valorNum,
+      data_vencimento: dataFormatada,
+      status: editStatus,
+      categoria_id: editCategoriaId,
+      conta_id: editContaId,
+    }).eq("id", transacaoEditando.id);
+
+    if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
+    setModalEditarTransVisivel(false);
+    setTransacaoEditando(null);
+    carregarDados();
   };
 
   const alternarStatus = async (id: number, statusAtual: string) => {
@@ -404,6 +498,9 @@ export default function TransacoesScreen() {
                       {prefixoValor} R${t.valor.toFixed(2)}
                     </Text>
                     <View style={{ flexDirection: "row", marginTop: 6, gap: 4 }}>
+                      <TouchableOpacity onPress={() => abrirEditarTransacao(t)} style={styles.acaoBtn}>
+                        <MaterialIcons name="edit" size={20} color="#457B9D" />
+                      </TouchableOpacity>
                       <TouchableOpacity onPress={() => alternarStatus(t.id, t.status)} style={styles.acaoBtn}>
                         <MaterialIcons
                           name={isPendente ? "radio-button-unchecked" : "check-circle"}
@@ -454,6 +551,109 @@ export default function TransacoesScreen() {
       </ScrollView>
 
       {/* MODAIS DE FILTRO */}
+      {/* MODAL EDITAR TRANSAÇÃO */}
+      <Modal animationType="slide" transparent visible={modalEditarTransVisivel} onRequestClose={() => setModalEditarTransVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", width: "95%", maxHeight: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>Editar Transação</Text>
+
+              {/* Status */}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: 12, backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0", borderRadius: 10 }}>
+                <Text style={{ color: isDark ? "#FFF" : "#1A1A1A", fontWeight: "600" }}>
+                  {editStatus === "paga" ? "✓ Pago/Recebido" : "⏳ Pendente"}
+                </Text>
+                <Switch
+                  value={editStatus === "paga"}
+                  onValueChange={(v) => setEditStatus(v ? "paga" : "pendente")}
+                  trackColor={{ false: "#767577", true: "#2A9D8F" }}
+                />
+              </View>
+
+              {/* Descrição */}
+              <TextInput
+                style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", color: isDark ? "#FFF" : "#1A1A1A", borderColor: isDark ? "#444" : "#DDD" }]}
+                placeholder="Descrição"
+                placeholderTextColor={isDark ? "#888" : "#AAA"}
+                value={editDescricao}
+                onChangeText={setEditDescricao}
+              />
+
+              {/* Valor */}
+              <TextInput
+                style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", color: isDark ? "#FFF" : "#1A1A1A", borderColor: isDark ? "#444" : "#DDD" }]}
+                placeholder="Valor (Ex: 50.00)"
+                placeholderTextColor={isDark ? "#888" : "#AAA"}
+                value={editValor}
+                onChangeText={setEditValor}
+                keyboardType="numeric"
+              />
+
+              {/* Data */}
+              <TouchableOpacity
+                style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", borderColor: isDark ? "#444" : "#DDD", flexDirection: "row", alignItems: "center" }]}
+                onPress={() => setMostrarCalendarioEdit(true)}
+              >
+                <MaterialIcons name="calendar-today" size={18} color={isDark ? "#AAA" : "#666"} style={{ marginRight: 8 }} />
+                <Text style={{ color: isDark ? "#FFF" : "#1A1A1A" }}>
+                  {String(editData.getDate()).padStart(2, "0")}/{String(editData.getMonth() + 1).padStart(2, "0")}/{editData.getFullYear()}
+                </Text>
+              </TouchableOpacity>
+              {mostrarCalendarioEdit && (
+                <DateTimePicker
+                  value={editData}
+                  mode="date"
+                  display="default"
+                  onChange={(_e, d) => { setMostrarCalendarioEdit(false); if (d) setEditData(d); }}
+                />
+              )}
+
+              {/* Conta */}
+              <Text style={{ color: isDark ? "#AAA" : "#666", fontSize: 12, marginBottom: 6, marginTop: 4 }}>Conta:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                {contas.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.filterPill, { backgroundColor: editContaId === c.id ? "#457B9D" : (isDark ? "#2C2C2C" : "#F0F0F0"), borderWidth: 1, borderColor: editContaId === c.id ? "#457B9D" : (isDark ? "#444" : "#DDD"), marginRight: 8 }]}
+                    onPress={() => setEditContaId(c.id)}
+                  >
+                    <Text style={[styles.filterPillText, { color: editContaId === c.id ? "#FFF" : (isDark ? "#FFF" : "#1A1A1A") }]}>{c.nome}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Categoria */}
+              {transacaoEditando && !transacaoEditando.descricao.includes("[Transf.]") && (
+                <>
+                  <Text style={{ color: isDark ? "#AAA" : "#666", fontSize: 12, marginBottom: 6 }}>Categoria:</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === transacaoEditando.tipo).map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[styles.filterPill, { backgroundColor: editCategoriaId === cat.id ? cat.cor : (isDark ? "#2C2C2C" : "#F0F0F0"), borderWidth: 1, borderColor: editCategoriaId === cat.id ? cat.cor : (isDark ? "#444" : "#DDD"), marginRight: 8 }]}
+                        onPress={() => setEditCategoriaId(cat.id)}
+                      >
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: editCategoriaId === cat.id ? "#FFF" : cat.cor, marginRight: 4 }} />
+                        <Text style={[styles.filterPillText, { color: editCategoriaId === cat.id ? "#FFF" : (isDark ? "#FFF" : "#1A1A1A") }]}>{cat.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12, marginTop: 8 }}>
+                <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }} onPress={() => setModalEditarTransVisivel(false)}>
+                  <Text style={{ color: isDark ? "#AAA" : "#666", fontWeight: "bold" }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: "#2A9D8F" }} onPress={salvarEdicaoTransacao}>
+                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       <Modal animationType="fade" transparent visible={modalFiltroTipo} onRequestClose={() => setModalFiltroTipo(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
@@ -585,6 +785,7 @@ const styles = StyleSheet.create({
   footerValorReceita: { fontSize: 13, fontWeight: "700", color: "#2A9D8F" },
   footerValorDespesa: { fontSize: 13, fontWeight: "700", color: "#E76F51" },
 
+  editInput: { padding: 14, borderRadius: 10, borderWidth: 1, marginBottom: 14, fontSize: 15 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
   modalContent: { width: "90%", padding: 25, borderRadius: 16, elevation: 5 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
