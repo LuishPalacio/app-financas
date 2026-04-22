@@ -57,6 +57,7 @@ COMPORTAMENTO:
 - NUNCA mostre IDs numéricos nas mensagens. Use apenas nomes.
 - Quando tiver todos os dados, mude status para "ready_for_confirmation" com resumo completo.
 - Execute SOMENTE após confirmação explícita (sim, pode, ok, confirma, vai, claro).
+- DATAS: sempre exiba datas para o usuário no formato DD/MM/AAAA (ex: 22/04/2026). Internamente use YYYY-MM-DD.
 
 CAMPOS — create_transaction (colete nesta ordem):
 1. tipo: "receita" ou "despesa"
@@ -227,6 +228,13 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     return data;
   };
 
+  const formatarDataBR = (dataISO: string): string => {
+    const partes = dataISO.split("-");
+    if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    if (partes.length === 2) return `${partes[1]}/${partes[0]}`;
+    return dataISO;
+  };
+
   const resolverConta = (data: Record<string, any>) => {
     if (data.conta_id && !isNaN(Number(data.conta_id)))
       return contasUsuario.find((c) => c.id === Number(data.conta_id)) ?? null;
@@ -269,7 +277,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
     if (error) return `Erro ao criar transação: ${error.message}`;
     await carregarContexto();
-    return `✅ ${tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada!\n📅 ${dataVenc}\n📝 ${data.description}\n🏦 Conta: ${conta.nome}${cat ? `\n🏷 Categoria: ${cat.nome}` : ""}`;
+    return `✅ ${tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada!\n📅 ${formatarDataBR(dataVenc)}\n📝 ${data.description}\n🏦 Conta: ${conta.nome}${cat ? `\n🏷 Categoria: ${cat.nome}` : ""}`;
   };
 
   const criarConta = async (data: Record<string, any>): Promise<string> => {
@@ -428,7 +436,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     const meta30 = totalRec * 0.3;
     const meta20 = totalRec * 0.2;
 
-    let analise = `📊 Análise Financeira — ${mesAtual}\n\n`;
+    let analise = `📊 Análise Financeira — ${formatarDataBR(mesAtual)}\n\n`;
     analise += `💰 Receitas: R$ ${totalRec.toFixed(2)}\n`;
     analise += `💸 Despesas: R$ ${totalDesp.toFixed(2)}\n`;
     analise += `📈 Saldo do mês: R$ ${saldo.toFixed(2)}\n`;
