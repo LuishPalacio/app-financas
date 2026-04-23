@@ -148,7 +148,7 @@ export default function LoginScreen() {
     } else {
       Alert.alert(
         "Conta Criada com Sucesso! 🎉",
-        `Bem-vindo(a), ${nome}! A sua conta foi registrada nas nuvens.\n\nSe a confirmação por e-mail estiver ativada, verifique a sua caixa. Caso contrário, já pode fazer o login!`,
+        `Bem-vindo(a), ${nome}!\n\nEnviamos um e-mail de confirmação para:\n${email}\n\nAbra o e-mail e clique no link para ativar sua conta antes de fazer o login.`,
       );
       setIsLogin(true);
       setPassword("");

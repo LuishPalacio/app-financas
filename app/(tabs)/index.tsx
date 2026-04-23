@@ -465,11 +465,21 @@ export default function Dashboard() {
   };
 
   const arquivarConta = (conta: Conta) => {
+    const saldoAtual = calcularSaldoConta(conta);
     const temLancamentos = transacoes.some((t) => t.conta_id === conta.id);
+
+    if (saldoAtual > 0.005) {
+      return Alert.alert(
+        "Conta com Saldo",
+        `A conta "${conta.nome}" possui saldo de R$ ${saldoAtual.toFixed(2)}.\n\nTransfira ou zerize o saldo antes de arquivar.`,
+        [{ text: "OK" }]
+      );
+    }
+
     if (temLancamentos) {
       Alert.alert(
         "Arquivar Conta",
-        `A conta "${conta.nome}" tem lançamentos e não pode ser excluída. Deseja arquivá-la?`,
+        `A conta "${conta.nome}" tem lançamentos e não pode ser excluída.\n\nSaldo atual: R$ ${saldoAtual.toFixed(2)}\n\nDeseja arquivá-la?`,
         [
           { text: "Cancelar", style: "cancel" },
           { text: "Arquivar", onPress: () => executarArquivar(conta) },
@@ -594,10 +604,10 @@ export default function Dashboard() {
         </ScrollView>
 
         {/* CARTÃO DE FLUXO DE CAIXA */}
-        <View style={styles.balanceCard}>
+        <View style={[styles.balanceCard, { backgroundColor: isDark ? "#1A1A1A" : "#E8E8E8" }]}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.mesBotao}>
-              <MaterialIcons name="chevron-left" size={24} color="#FFF" />
+              <MaterialIcons name="chevron-left" size={24} color={isDark ? "#FFF" : "#1A1A1A"} />
             </TouchableOpacity>
 
             {/* DATA CLICÁVEL */}
@@ -607,38 +617,38 @@ export default function Dashboard() {
               setMostrarPickerMesAno(true);
             }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={{ fontSize: 18, fontWeight: "bold", color: "#FFF", textTransform: "capitalize" }}>
+                <Text style={{ fontSize: 18, fontWeight: "bold", color: isDark ? "#FFF" : "#1A1A1A", textTransform: "capitalize" }}>
                   {nomeDoMes}
                 </Text>
-                <MaterialIcons name="arrow-drop-down" size={20} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />
+                <MaterialIcons name="arrow-drop-down" size={20} color={isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.5)"} style={{ marginLeft: 4 }} />
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => alterarMes(1)} style={styles.mesBotao}>
-              <MaterialIcons name="chevron-right" size={24} color="#FFF" />
+              <MaterialIcons name="chevron-right" size={24} color={isDark ? "#FFF" : "#1A1A1A"} />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.balanceTitle}>Saldo Global (Na Conta)</Text>
-          <Text style={styles.balanceAmount}>R$ {saldoAtualGlobal.toFixed(2)}</Text>
+          <Text style={[styles.balanceTitle, { color: isDark ? "#999" : "#555" }]}>Saldo Global (Na Conta)</Text>
+          <Text style={[styles.balanceAmount, { color: isDark ? "#FFF" : "#1A1A1A" }]}>R$ {saldoAtualGlobal.toFixed(2)}</Text>
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: "#333" }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: isDark ? "#333" : "#CCC" }}>
             <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
-              <Text style={{ color: "#999", fontSize: 12 }}>Entradas do Mês</Text>
+              <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12 }}>Entradas do Mês</Text>
               <Text style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 16 }}>
                 + R$ {receitasDoMes.toFixed(2)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
-              <Text style={{ color: "#999", fontSize: 12, textAlign: "right" }}>Saídas do Mês</Text>
+              <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12, textAlign: "right" }}>Saídas do Mês</Text>
               <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 16, textAlign: "right" }}>
                 - R$ {despesasDoMes.toFixed(2)}
               </Text>
             </TouchableOpacity>
           </View>
 
-          <View style={{ marginTop: 15, alignItems: "center", backgroundColor: "rgba(255,255,255,0.05)", padding: 10, borderRadius: 8 }}>
-            <Text style={{ color: "#999", fontSize: 12 }}>Balanço do Mês</Text>
+          <View style={{ marginTop: 15, alignItems: "center", backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", padding: 10, borderRadius: 8 }}>
+            <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12 }}>Balanço do Mês</Text>
             <Text style={{ color: balancoMensal >= 0 ? "#8AB17D" : "#E76F51", fontWeight: "bold", fontSize: 20 }}>
               R$ {balancoMensal.toFixed(2)}
             </Text>

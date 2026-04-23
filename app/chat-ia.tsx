@@ -202,7 +202,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   const inicializarChat = async () => {
-    const salvo = await AsyncStorage.getItem("@historico_chat");
+    const salvo = await AsyncStorage.getItem(`@historico_chat_${session?.user?.id}`);
     if (salvo) {
       try {
         const parsed: Mensagem[] = JSON.parse(salvo);
@@ -219,7 +219,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   useEffect(() => { inicializarChat(); carregarContexto(); }, []);
-  useEffect(() => { if (mensagens.length > 0) AsyncStorage.setItem("@historico_chat", JSON.stringify(mensagens)); }, [mensagens]);
+  useEffect(() => { if (mensagens.length > 0) AsyncStorage.setItem(`@historico_chat_${session?.user?.id}`, JSON.stringify(mensagens)); }, [mensagens]);
 
   const converterData = (data: string | undefined): string => {
     if (!data) return new Date().toISOString().split("T")[0];
@@ -607,7 +607,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   const limparChat = async () => {
-    await AsyncStorage.removeItem("@historico_chat");
+    await AsyncStorage.removeItem(`@historico_chat_${session?.user?.id}`);
     if (session?.user?.id) await supabase.from("chat_historico").delete().eq("user_id", session.user.id);
     setMensagens([{ id: "1", role: "ia", texto: "Chat limpo! Como posso ajudar agora?" }]);
     currentDataRef.current = {};

@@ -70,7 +70,7 @@ export default function CaixinhasScreen() {
     inputFundo: isDark ? "#2C2C2C" : "#FFF",
     barraFundo: isDark ? "#333333" : "#EAEAEA",
     pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
-    totalCardBg: isDark ? "#1A1A1A" : "#1A1A1A",
+    totalCardBg: isDark ? "#1A1A1A" : "#E0E0E0",
   };
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
@@ -221,7 +221,6 @@ export default function CaixinhasScreen() {
     const { data } = await supabase
       .from("transacoes")
       .select("id, tipo, valor, data_vencimento, descricao, conta_id")
-      .eq("user_id", session.user.id)
       .order("data_vencimento", { ascending: false });
 
     // Filtrar por caixinha pelo nome em código (evita SQL injection via ilike interpolado)

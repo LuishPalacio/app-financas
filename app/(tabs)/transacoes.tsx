@@ -239,25 +239,60 @@ export default function TransacoesScreen() {
     setModalEditarTransVisivel(true);
   };
 
-  const salvarEdicaoTransacao = async () => {
+  const isRecorrente = (t: Transacao) =>
+    t.descricao.endsWith("(Fixa)") || /\(\d+\/\d+\)$/.test(t.descricao);
+
+  const descricaoBase = (desc: string) =>
+    desc.replace(/\s*\(\d+\/\d+\)$/, "").replace(/\s*\(Fixa\)$/, "").trim();
+
+  const executarEdicao = async (apenasEsta: boolean) => {
     if (!transacaoEditando) return;
     const valorNum = parseFloat(editValor.replace(",", "."));
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
     const dataFormatada = `${editData.getFullYear()}-${String(editData.getMonth() + 1).padStart(2, "0")}-${String(editData.getDate()).padStart(2, "0")}`;
+    const campos = { valor: valorNum, status: editStatus, categoria_id: editCategoriaId, conta_id: editContaId };
 
-    const { error } = await supabase.from("transacoes").update({
-      descricao: editDescricao,
-      valor: valorNum,
-      data_vencimento: dataFormatada,
-      status: editStatus,
-      categoria_id: editCategoriaId,
-      conta_id: editContaId,
-    }).eq("id", transacaoEditando.id);
+    if (apenasEsta) {
+      const { error } = await supabase.from("transacoes").update({ ...campos, descricao: editDescricao, data_vencimento: dataFormatada }).eq("id", transacaoEditando.id);
+      if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
+    } else {
+      const base = descricaoBase(transacaoEditando.descricao);
+      const { data: serie } = await supabase.from("transacoes")
+        .select("id, descricao")
+        .eq("conta_id", transacaoEditando.conta_id)
+        .eq("tipo", transacaoEditando.tipo);
+      const ids = (serie ?? [])
+        .filter((t) => descricaoBase(t.descricao) === base)
+        .map((t) => t.id);
+      if (ids.length > 0) {
+        const { error } = await supabase.from("transacoes").update(campos).in("id", ids);
+        if (error) return Alert.alert("Erro", "Não foi possível atualizar a série.");
+      }
+    }
 
-    if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
     setModalEditarTransVisivel(false);
     setTransacaoEditando(null);
     carregarDados();
+  };
+
+  const salvarEdicaoTransacao = async () => {
+    if (!transacaoEditando) return;
+    const valorNum = parseFloat(editValor.replace(",", "."));
+    if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
+
+    if (isRecorrente(transacaoEditando)) {
+      Alert.alert(
+        "Editar Recorrência",
+        "Deseja alterar apenas este lançamento ou toda a série?",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Só este", onPress: () => executarEdicao(true) },
+          { text: "Toda a série", onPress: () => executarEdicao(false) },
+        ]
+      );
+    } else {
+      executarEdicao(true);
+    }
   };
 
   const alternarStatus = async (id: number, statusAtual: string) => {
