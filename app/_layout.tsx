@@ -4,25 +4,31 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
-import { Component, ReactNode } from "react";
-import { StatusBar } from "expo-status-bar";
-import { Alert, useColorScheme } from "react-native";
-import "react-native-reanimated";
 import * as Linking from "expo-linking";
-
-import { MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { StatusBar } from "expo-status-bar";
 import * as LocalAuthentication from "expo-local-authentication";
-import * as Updates from "expo-updates"; // <-- MOTOR DE ATUALIZAÇÕES ADICIONADO
-import React, { createContext, useContext, useEffect, useState } from "react";
+import * as Updates from "expo-updates";
+import React, {
+  Component,
+  ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
+  Alert,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useColorScheme,
   View,
 } from "react-native";
-import { supabase } from "../lib/supabase"; // <-- NOSSO CABO DA NUVEM AQUI!
+import "react-native-reanimated";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MaterialIcons } from "@expo/vector-icons";
+import { supabase } from "../lib/supabase";
 
 // ERROR BOUNDARY
 class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
@@ -52,12 +58,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolea
   }
 }
 
-// CONTEXTO GLOBAL (AGORA GUARDA A SESSÃO DO USUÁRIO TAMBÉM)
 export const ThemeContext = createContext({
   isDark: false,
   toggleTheme: async () => {},
   isBiometricEnabled: false,
-  toggleBiometric: async (value: boolean) => {},
+  toggleBiometric: async (_value: boolean) => {},
   session: null as any,
 });
 
@@ -70,15 +75,12 @@ export default function RootLayout() {
 
   const [isDark, setIsDark] = useState(systemTheme === "dark");
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
-
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isReady, setIsReady] = useState(false);
-
-  // ESTADOS DO SUPABASE
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
-  // DEEP LINK — intercepta links do email (recuperação de senha, confirmação)
+  // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
   useEffect(() => {
     if (!url) return;
@@ -89,25 +91,22 @@ export default function RootLayout() {
       supabase.auth.setSession({
         access_token: params.access_token,
         refresh_token: params.refresh_token,
+      }).then(() => {
+        if (params.type === "signup") {
+          router.replace("/email-confirmed" as any);
+        }
       });
     }
   }, [url]);
 
-  // 1. OLHEIRO DE ATUALIZAÇÕES (OTA Updates)
+  // Verifica atualizações OTA ao abrir o app
   useEffect(() => {
     async function verificarAtualizacao() {
       try {
         const update = await Updates.checkForUpdateAsync();
-
         if (update.isAvailable) {
-          Alert.alert(
-            "Nova Atualização!",
-            "Baixando as novidades do FinFlow...",
-            [{ text: "Aguarde..." }],
-          );
-
+          Alert.alert("Nova Atualização!", "Baixando as novidades do FinFlow...", [{ text: "Aguarde..." }]);
           await Updates.fetchUpdateAsync();
-
           Alert.alert(
             "Sucesso!",
             "O aplicativo será reiniciado para aplicar as melhorias.",
@@ -115,16 +114,13 @@ export default function RootLayout() {
           );
         }
       } catch (error) {
-        console.log("Erro ao buscar atualizações: ", error);
+        console.log("Erro ao buscar atualizações:", error);
       }
     }
-
-    if (!__DEV__) {
-      verificarAtualizacao();
-    }
+    if (!__DEV__) verificarAtualizacao();
   }, []);
 
-  // 2. CONFIGURAÇÕES INICIAIS E SUPABASE
+  // Inicializa sessão e escuta mudanças de autenticação
   useEffect(() => {
     carregarConfiguracoes();
 
@@ -133,31 +129,23 @@ export default function RootLayout() {
       setIsAuthReady(true);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (event === "PASSWORD_RECOVERY") {
-        router.replace("/reset-password");
-      }
-      if (event === "SIGNED_IN" && url?.includes("email-confirmed")) {
-        router.replace("/email-confirmed");
+        router.replace("/reset-password" as any);
       }
     });
 
-    // Boa prática: limpa o escutador quando o componente for desmontado
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
-  // O SEGURANÇA EM AÇÃO: Fica de olho nas mudanças de tela e de sessão
+  // Guarda de rotas: redireciona conforme estado de autenticação
   useEffect(() => {
     if (!isReady || !isAuthReady) return;
 
-    const inAuthGroup = segments[0] === "login";
-    const inSpecialFlow =
-      segments[0] === "reset-password" || segments[0] === "email-confirmed";
+    const seg = segments[0] as string;
+    const inAuthGroup = seg === "login";
+    const inSpecialFlow = seg === "reset-password" || seg === "email-confirmed";
 
     if (!session && !inAuthGroup && !inSpecialFlow) {
       router.replace("/login");
@@ -180,7 +168,7 @@ export default function RootLayout() {
       } else {
         setIsUnlocked(true);
       }
-    } catch (e) {
+    } catch {
       setIsUnlocked(true);
     } finally {
       setIsReady(true);
@@ -190,7 +178,6 @@ export default function RootLayout() {
   const verificarBiometria = async () => {
     const temHardware = await LocalAuthentication.hasHardwareAsync();
     const temBiometria = await LocalAuthentication.isEnrolledAsync();
-
     if (temHardware && temBiometria) {
       autenticar();
     } else {
@@ -218,35 +205,19 @@ export default function RootLayout() {
     if (value) setIsUnlocked(true);
   };
 
-  // TELA DE CARREGAMENTO (Enquanto o segurança pensa)
   if (!isReady || !isAuthReady) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: isDark ? "#121212" : "#FFF",
-        }}
-      >
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: isDark ? "#121212" : "#FFF" }}>
         <ActivityIndicator size="large" color="#2A9D8F" />
       </View>
     );
   }
 
-  // TELA DE BLOQUEIO BIOMÉTRICO (Só mostra se tiver logado E com a biometria ativa)
   if (session && isBiometricEnabled && !isUnlocked) {
     return (
-      <View
-        style={[
-          styles.lockScreen,
-          { backgroundColor: isDark ? "#121212" : "#FFF" },
-        ]}
-      >
+      <View style={[styles.lockScreen, { backgroundColor: isDark ? "#121212" : "#FFF" }]}>
         <MaterialIcons name="lock" size={80} color="#2A9D8F" />
-        <Text
-          style={[styles.lockTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}
-        >
+        <Text style={[styles.lockTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>
           App Protegido
         </Text>
         <TouchableOpacity style={styles.button} onPress={autenticar}>
@@ -256,28 +227,19 @@ export default function RootLayout() {
     );
   }
 
-  // O APLICATIVO EM SI
   return (
     <ErrorBoundary>
-    <ThemeContext.Provider
-      value={{
-        isDark,
-        toggleTheme,
-        isBiometricEnabled,
-        toggleBiometric,
-        session,
-      }}
-    >
-      <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="reset-password" options={{ headerShown: false }} />
-          <Stack.Screen name="email-confirmed" options={{ headerShown: false }} />
-        </Stack>
-        <StatusBar style={isDark ? "light" : "dark"} />
-      </ThemeProvider>
-    </ThemeContext.Provider>
+      <ThemeContext.Provider value={{ isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session }}>
+        <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="login" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="reset-password" />
+            <Stack.Screen name="email-confirmed" />
+          </Stack>
+          <StatusBar style={isDark ? "light" : "dark"} />
+        </ThemeProvider>
+      </ThemeContext.Provider>
     </ErrorBoundary>
   );
 }
