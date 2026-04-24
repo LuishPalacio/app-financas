@@ -147,8 +147,8 @@ export default function LoginScreen() {
       Alert.alert("Erro ao criar conta", error.message);
     } else {
       Alert.alert(
-        "Conta Criada com Sucesso! 🎉",
-        `Bem-vindo(a), ${nome}!\n\nEnviamos um e-mail de confirmação para:\n${email}\n\nAbra o e-mail e clique no link para ativar sua conta antes de fazer o login.`,
+        "Conta Criada com Sucesso!",
+        `Bem-vindo(a), ${nome}!\n\nSua conta foi criada. Você já pode fazer o login.`,
       );
       setIsLogin(true);
       setPassword("");

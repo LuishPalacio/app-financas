@@ -468,23 +468,14 @@ export default function Dashboard() {
     const saldoAtual = calcularSaldoConta(conta);
     const temLancamentos = transacoes.some((t) => t.conta_id === conta.id);
 
-    if (saldoAtual > 0.005) {
-      return Alert.alert(
-        "Conta com Saldo",
-        `A conta "${conta.nome}" possui saldo de R$ ${saldoAtual.toFixed(2)}.\n\nTransfira ou zerize o saldo antes de arquivar.`,
-        [{ text: "OK" }]
-      );
-    }
-
     if (temLancamentos) {
-      Alert.alert(
-        "Arquivar Conta",
-        `A conta "${conta.nome}" tem lançamentos e não pode ser excluída.\n\nSaldo atual: R$ ${saldoAtual.toFixed(2)}\n\nDeseja arquivá-la?`,
-        [
-          { text: "Cancelar", style: "cancel" },
-          { text: "Arquivar", onPress: () => executarArquivar(conta) },
-        ]
-      );
+      const aviso = saldoAtual > 0.005
+        ? `Esta conta possui saldo de R$ ${saldoAtual.toFixed(2)}. O saldo ficará registrado, mas a conta não aparecerá mais nas operações.\n\nDeseja arquivá-la?`
+        : `A conta "${conta.nome}" tem lançamentos e não pode ser excluída. Deseja arquivá-la?`;
+      Alert.alert("Arquivar Conta", aviso, [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Arquivar", onPress: () => executarArquivar(conta) },
+      ]);
     } else {
       Alert.alert(
         "Arquivar ou Excluir",
