@@ -248,6 +248,7 @@ export default function ConfiguracoesScreen() {
       await supabase.from("contas").delete().eq("user_id", meuId);
       await supabase.from("categorias").delete().eq("user_id", meuId);
       await supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`);
+      await supabase.rpc("delete_user");
       await supabase.auth.signOut();
       Alert.alert("Conta apagada", "Seus dados foram removidos com sucesso.");
     } catch (error) {

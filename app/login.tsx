@@ -131,7 +131,7 @@ export default function LoginScreen() {
       );
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: email,
       password: password,
       options: {
@@ -145,10 +145,15 @@ export default function LoginScreen() {
 
     if (error) {
       Alert.alert("Erro ao criar conta", error.message);
+    } else if (!data.user || (data.user.identities?.length ?? 0) === 0) {
+      Alert.alert(
+        "E-mail já cadastrado",
+        "Este e-mail já está em uso. Faça login ou recupere sua senha.",
+      );
     } else {
       Alert.alert(
         "Conta Criada com Sucesso!",
-        `Bem-vindo(a), ${nome}!\n\nSua conta foi criada. Você já pode fazer o login.`,
+        `Bem-vindo(a), ${nome}!\n\nUm e-mail de confirmação foi enviado para ${email}. Verifique sua caixa de entrada e confirme para ativar sua conta.`,
       );
       setIsLogin(true);
       setPassword("");

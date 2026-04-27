@@ -40,6 +40,7 @@ interface MovimentoCaixinha {
   data_vencimento: string;
   descricao: string;
   conta_id: number;
+  user_id: string;
 }
 
 const PALETA_CORES = [
@@ -220,7 +221,7 @@ export default function CaixinhasScreen() {
 
     const { data } = await supabase
       .from("transacoes")
-      .select("id, tipo, valor, data_vencimento, descricao, conta_id")
+      .select("id, tipo, valor, data_vencimento, descricao, conta_id, user_id")
       .order("data_vencimento", { ascending: false });
 
     // Filtrar por caixinha pelo nome em código (evita SQL injection via ilike interpolado)
@@ -678,6 +679,7 @@ export default function CaixinhasScreen() {
                   const isGuardar = mov.descricao.startsWith("Guardar");
                   const conta = contas.find((c) => c.id === mov.conta_id);
                   const partes = (mov.data_vencimento || "0000-00-00").split("-");
+                  const isEu = mov.user_id === session?.user?.id;
                   return (
                     <View key={mov.id} style={[styles.movRow, { backgroundColor: Cores.pillFundo }]}>
                       <View style={[styles.movIcone, { backgroundColor: isGuardar ? "#2A9D8F22" : "#E76F5122" }]}>
@@ -687,9 +689,9 @@ export default function CaixinhasScreen() {
                         <Text style={{ color: Cores.textoPrincipal, fontWeight: "600", fontSize: 13 }}>
                           {isGuardar ? "Guardado" : "Resgatado"}
                         </Text>
-                        {conta && (
-                          <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>{conta.nome}</Text>
-                        )}
+                        <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>
+                          {isEu ? "Você" : "Parceiro(a)"}{conta ? ` · ${conta.nome}` : ""}
+                        </Text>
                       </View>
                       <View style={{ alignItems: "flex-end" }}>
                         <Text style={{ color: isGuardar ? "#2A9D8F" : "#E76F51", fontWeight: "bold", fontSize: 14 }}>

@@ -196,6 +196,8 @@ export default function Dashboard() {
   const [compartilhadoEditConta, setCompartilhadoEditConta] = useState(false);
   const [corEditConta, setCorEditConta] = useState(PALETA_CORES[0]);
   const [editandoSaldoConta, setEditandoSaldoConta] = useState(false);
+  const [loadingConta, setLoadingConta] = useState(false);
+  const [loadingCat, setLoadingCat] = useState(false);
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [loadingTrans, setLoadingTrans] = useState(false);
@@ -215,7 +217,7 @@ export default function Dashboard() {
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
   // --- Cálculos ---
-  const saldoInicialTotal = contas.reduce((acc, curr) => acc + curr.saldo_inicial, 0);
+  const saldoInicialTotal = contas.filter(c => !c.arquivado).reduce((acc, curr) => acc + curr.saldo_inicial, 0);
   const receitasRealizadas = transacoes
     .filter((t) => t.tipo === "receita" && t.status === "paga")
     .reduce((acc, curr) => acc + curr.valor, 0);
@@ -314,10 +316,12 @@ export default function Dashboard() {
   // --- Ações de Categoria ---
   const salvarCategoria = async () => {
     if (nomeCategoria.trim() === "") return Alert.alert("Aviso", "Escreve um nome.");
+    setLoadingCat(true);
     const { error } = await supabase.from("categorias").insert([{
       nome: nomeCategoria, cor: corSelecionada, icone: iconeSelecionado,
       tipo: tipoNovaCategoria, ativa: 1, user_id: session.user.id,
     }]);
+    setLoadingCat(false);
     if (error) return Alert.alert("Erro", "Falha ao salvar categoria.");
     setNomeCategoria("");
     setTipoNovaCategoria("despesa");
@@ -399,13 +403,14 @@ export default function Dashboard() {
   // --- Ações de Conta ---
   const salvarConta = async () => {
     if (nomeConta.trim() === "") return Alert.alert("Aviso", "Dá um nome à conta.");
+    setLoadingConta(true);
     const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
     let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
     if (res.error) {
-      // coluna "cor" pode não existir — tentar sem ela
       res = await supabase.from("contas").insert([base]);
     }
+    setLoadingConta(false);
     if (res.error) return Alert.alert("Erro", `Falha ao salvar conta: ${res.error.message}`);
     setNomeConta("");
     setSaldoInicialConta("");
@@ -979,7 +984,7 @@ export default function Dashboard() {
 
             <View style={styles.modalButtons}>
               <Button title="Cancelar" color="#999" onPress={() => setModalContaVisivel(false)} />
-              <Button title="Salvar" color="#457B9D" onPress={salvarConta} />
+              <Button title={loadingConta ? "Salvando..." : "Salvar"} color="#457B9D" onPress={salvarConta} disabled={loadingConta} />
             </View>
           </View>
         </View>
@@ -1130,7 +1135,7 @@ export default function Dashboard() {
             </ScrollView>
             <View style={styles.modalButtons}>
               <Button title="Cancelar" color="#999" onPress={() => setModalCatVisivel(false)} />
-              <Button title="Salvar" color="#2A9D8F" onPress={salvarCategoria} />
+              <Button title={loadingCat ? "Salvando..." : "Salvar"} color="#2A9D8F" onPress={salvarCategoria} disabled={loadingCat} />
             </View>
           </View>
         </View>
