@@ -1,4 +1,4 @@
-# 💰 app Finanças - LHS Finanças
+# 💰 app Finanças - FinFlow Finanças
 
 Aplicativo de controle financeiro pessoal e compartilhado desenvolvido com **React Native**, **Expo** e **Supabase**.
 
