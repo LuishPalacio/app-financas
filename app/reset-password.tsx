@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +21,16 @@ export default function ResetPasswordScreen() {
   const [mostrarNova, setMostrarNova] = useState(false);
   const [mostrarConfirmar, setMostrarConfirmar] = useState(false);
   const [loading, setLoading] = useState(false);
+  const concluiu = useRef(false);
+
+  // Se o usuário sair da tela sem redefinir a senha, desconecta para evitar acesso indevido
+  useEffect(() => {
+    return () => {
+      if (!concluiu.current) {
+        supabase.auth.signOut();
+      }
+    };
+  }, []);
 
   async function redefinirSenha() {
     if (!novaSenha || !confirmarSenha)
@@ -37,6 +47,7 @@ export default function ResetPasswordScreen() {
     if (error) {
       Alert.alert("Erro", error.message);
     } else {
+      concluiu.current = true;
       Alert.alert(
         "Senha Redefinida! ✓",
         "Sua senha foi atualizada com sucesso. Você já pode usar o app normalmente.",

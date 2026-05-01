@@ -60,7 +60,7 @@ const LISTA_ICONES = [
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
 export default function CaixinhasScreen() {
-  const { isDark, session } = useAppTheme();
+  const { isDark, session, showToast } = useAppTheme();
 
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
@@ -77,6 +77,7 @@ export default function CaixinhasScreen() {
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
+  const [parceiraNome, setParceiraNome] = useState("Parceiro(a)");
 
   // Modal nova caixinha
   const [modalNovaVisivel, setModalNovaVisivel] = useState(false);
@@ -124,7 +125,17 @@ export default function CaixinhasScreen() {
       ]);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
       if (resContas.data) setContas(resContas.data);
-      setTemParceiro(resParceria.data ? resParceria.data.length > 0 : false);
+      const parceria = resParceria.data?.[0];
+      setTemParceiro(!!parceria);
+      if (parceria) {
+        const parceiroId = parceria.solicitante_id === session.user.id
+          ? parceria.convidado_id
+          : parceria.solicitante_id;
+        if (parceiroId) {
+          const { data: nomeData } = await supabase.rpc("get_user_name", { user_id: parceiroId });
+          if (nomeData) setParceiraNome(nomeData);
+        }
+      }
     } catch (error) {
       console.error(error);
     }
@@ -265,6 +276,7 @@ export default function CaixinhasScreen() {
     setLoadingMovimento(false);
     setModalMovimentoVisivel(false); setCaixaSelecionada(null); setContaMovimentoId(null);
     carregarDados();
+    showToast(tipoMovimento === "guardar" ? "Valor guardado ✓" : "Resgate realizado ✓", "success");
   };
 
   const confirmarMovimento = async () => {
@@ -680,6 +692,8 @@ export default function CaixinhasScreen() {
                   const conta = contas.find((c) => c.id === mov.conta_id);
                   const partes = (mov.data_vencimento || "0000-00-00").split("-");
                   const isEu = mov.user_id === session?.user?.id;
+                  const meuNome = session?.user?.user_metadata?.nome_usuario || "Você";
+                  const nomeAutor = isEu ? meuNome : parceiraNome;
                   return (
                     <View key={mov.id} style={[styles.movRow, { backgroundColor: Cores.pillFundo }]}>
                       <View style={[styles.movIcone, { backgroundColor: isGuardar ? "#2A9D8F22" : "#E76F5122" }]}>
@@ -690,7 +704,7 @@ export default function CaixinhasScreen() {
                           {isGuardar ? "Guardado" : "Resgatado"}
                         </Text>
                         <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>
-                          {isEu ? "Você" : "Parceiro(a)"}{conta ? ` · ${conta.nome}` : ""}
+                          {nomeAutor}{conta ? ` · ${conta.nome}` : ""}
                         </Text>
                       </View>
                       <View style={{ alignItems: "flex-end" }}>

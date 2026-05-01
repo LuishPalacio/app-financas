@@ -18,7 +18,7 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 
 export default function ConfiguracoesScreen() {
-  const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session } = useAppTheme();
+  const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes } = useAppTheme();
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
@@ -181,7 +181,7 @@ export default function ConfiguracoesScreen() {
     setLoadingPerfil(false);
 
     if (error) Alert.alert("Erro", "Não foi possível salvar as alterações.");
-    else { Alert.alert("Sucesso", "Perfil atualizado com sucesso!"); setModalPerfilVisivel(false); }
+    else { showToast("Perfil atualizado ✓", "success"); setModalPerfilVisivel(false); }
   };
 
   const alterarSenha = async () => {
@@ -193,7 +193,7 @@ export default function ConfiguracoesScreen() {
     setLoadingPerfil(false);
     if (error) Alert.alert("Erro", "Não foi possível alterar a senha. " + error.message);
     else {
-      Alert.alert("Sucesso", "Senha alterada com sucesso!");
+      showToast("Senha alterada com sucesso ✓", "success");
       setNovaSenha(""); setNovaSenhaConfirm("");
       setModalPerfilVisivel(false);
     }
@@ -336,12 +336,19 @@ export default function ConfiguracoesScreen() {
               </View>
               <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ false: "#767577", true: "#2A9D8F" }} />
             </View>
-            <View style={styles.configRow}>
+            <View style={[styles.configRow, { borderBottomWidth: 1, borderBottomColor: Cores.borda }]}>
               <View style={styles.configLeft}>
                 <MaterialIcons name={isBiometricEnabled ? "lock" : "lock-open"} size={24} color={isBiometricEnabled ? "#457B9D" : "#999"} />
                 <Text style={[styles.configText, { color: Cores.texto }]}>Segurança (Biometria)</Text>
               </View>
               <Switch value={isBiometricEnabled} onValueChange={handleBiometricToggle} trackColor={{ false: "#767577", true: "#457B9D" }} />
+            </View>
+            <View style={styles.configRow}>
+              <View style={styles.configLeft}>
+                <MaterialIcons name={notificacoesAtivas ? "notifications-active" : "notifications-off"} size={24} color={notificacoesAtivas ? "#2A9D8F" : "#999"} />
+                <Text style={[styles.configText, { color: Cores.texto }]}>Notificações</Text>
+              </View>
+              <Switch value={notificacoesAtivas} onValueChange={toggleNotificacoes} trackColor={{ false: "#767577", true: "#2A9D8F" }} />
             </View>
           </View>
 

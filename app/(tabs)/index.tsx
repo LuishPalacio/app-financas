@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -19,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
+import { agendarNotificacoesDoApp } from "../../lib/notifications";
 
 interface Categoria {
   id: number;
@@ -138,7 +139,8 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
 };
 
 export default function Dashboard() {
-  const { isDark, session } = useAppTheme();
+  const { isDark, session, showToast, notificacoesAtivas } = useAppTheme();
+  const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
 
   const Cores = {
@@ -289,6 +291,31 @@ export default function Dashboard() {
       await AsyncStorage.setItem("@cache_contas", JSON.stringify(resContas.data ?? []));
       await AsyncStorage.setItem("@cache_transacoes", JSON.stringify(resTransacoes.data ?? []));
       await AsyncStorage.setItem("@cache_parceiro", JSON.stringify(temParc));
+
+      // Alerta de vencidos (apenas uma vez por sessão)
+      if (!alertaVencidoMostrado.current && resTransacoes.data) {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const vencidas = resTransacoes.data.filter((t: any) => {
+          if (t.status !== "pendente") return false;
+          const partes = (t.data_vencimento || "").split("-");
+          const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
+          return dataT < hoje;
+        });
+        if (vencidas.length > 0) {
+          alertaVencidoMostrado.current = true;
+          Alert.alert(
+            "⚠️ Lançamentos Vencidos",
+            `Você tem ${vencidas.length} lançamento${vencidas.length > 1 ? "s" : ""} vencido${vencidas.length > 1 ? "s" : ""} sem resolver.\n\nAcesse o Histórico para regularizá-los.`,
+            [{ text: "Ok" }]
+          );
+        }
+      }
+
+      // Agenda notificações locais com base nos dados do dia
+      if (notificacoesAtivas && resTransacoes.data) {
+        agendarNotificacoesDoApp(resTransacoes.data);
+      }
     } catch (error) {
       const catCache = await AsyncStorage.getItem("@cache_categorias");
       const conCache = await AsyncStorage.getItem("@cache_contas");
@@ -1208,20 +1235,27 @@ export default function Dashboard() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
-              <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
-                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
-                  <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
-                </TouchableOpacity>
-              </View>
+              {frequencia === "unica" && (
+                <>
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
+                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Repetição:</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 {(["unica", "parcelada", "fixa"] as const).map((freq) => (
-                  <TouchableOpacity key={freq} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequencia === freq && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFrequencia(freq)}>
+                  <TouchableOpacity key={freq} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequencia === freq && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => {
+                    setFrequencia(freq);
+                    if (freq !== "unica") setFoiPago(false);
+                  }}>
                     <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, frequencia === freq ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>
                       {freq === "unica" ? "Única" : freq === "parcelada" ? "Parcelada" : "Fixa Mensal"}
                     </Text>

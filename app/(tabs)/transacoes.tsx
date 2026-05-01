@@ -66,7 +66,7 @@ const formatarMesAno = (yyyymm: string) => {
 };
 
 export default function TransacoesScreen() {
-  const { isDark, session } = useAppTheme();
+  const { isDark, session, showToast } = useAppTheme();
 
   const Cores = {
     fundo: isDark ? "#121212" : "#F5F7FA",
@@ -295,11 +295,19 @@ export default function TransacoesScreen() {
     }
   };
 
-  const alternarStatus = async (id: number, statusAtual: string) => {
+  const alternarStatus = async (id: number, statusAtual: string, tipo: string) => {
     const novoStatus = statusAtual === "paga" ? "pendente" : "paga";
     const { error } = await supabase.from("transacoes").update({ status: novoStatus }).eq("id", id);
     if (error) Alert.alert("Erro", "Não foi possível atualizar o estado.");
-    else carregarDados();
+    else {
+      carregarDados();
+      if (novoStatus === "paga") {
+        const label = tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
+        showToast(label, tipo === "receita" ? "success" : "info");
+      } else {
+        showToast("Marcado como pendente", "info");
+      }
+    }
   };
 
   const toggleFiltroConta = (id: number) => {
@@ -473,6 +481,9 @@ export default function TransacoesScreen() {
               const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
               const partes = (t.data_vencimento || "0000-00-00").split("-");
               const isPendente = t.status === "pendente";
+              const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+              const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
+              const isVencida = isPendente && dataT < hoje;
               const isTransferencia = t.descricao.includes("[Transf.]");
               const corValor = isTransferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
               const prefixoValor = t.tipo === "receita" ? "+" : "-";
@@ -482,8 +493,14 @@ export default function TransacoesScreen() {
                 <View
                   key={t.id}
                   style={[styles.transacaoCard, {
-                    backgroundColor: isPendente ? (isDark ? "#1A1200" : "#FFFDE7") : bgRow,
+                    backgroundColor: isVencida
+                      ? (isDark ? "#2A0A0A" : "#FFEBEE")
+                      : isPendente
+                        ? (isDark ? "#1A1200" : "#FFFDE7")
+                        : bgRow,
                     borderBottomColor: Cores.borda,
+                    borderLeftWidth: isVencida ? 3 : 0,
+                    borderLeftColor: "#E76F51",
                   }]}
                 >
                   {/* Coluna esquerda: data */}
@@ -513,7 +530,12 @@ export default function TransacoesScreen() {
                           <Text style={[styles.badgeText, { color: categoria.cor }]} numberOfLines={1}>{categoria.nome}</Text>
                         </View>
                       )}
-                      {isPendente && (
+                      {isVencida && (
+                        <View style={[styles.pendentePill, { backgroundColor: "#E76F5133" }]}>
+                          <Text style={[styles.pendenteText, { color: "#E76F51" }]}>Vencida</Text>
+                        </View>
+                      )}
+                      {isPendente && !isVencida && (
                         <View style={styles.pendentePill}>
                           <Text style={styles.pendenteText}>Pendente</Text>
                         </View>
@@ -536,7 +558,7 @@ export default function TransacoesScreen() {
                       <TouchableOpacity onPress={() => abrirEditarTransacao(t)} style={styles.acaoBtn}>
                         <MaterialIcons name="edit" size={20} color="#457B9D" />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => alternarStatus(t.id, t.status)} style={styles.acaoBtn}>
+                      <TouchableOpacity onPress={() => alternarStatus(t.id, t.status, t.tipo)} style={styles.acaoBtn}>
                         <MaterialIcons
                           name={isPendente ? "radio-button-unchecked" : "check-circle"}
                           size={22}

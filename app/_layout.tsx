@@ -14,11 +14,13 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -29,6 +31,7 @@ import "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
+import { pedirPermissaoNotificacoes } from "../lib/notifications";
 
 // ERROR BOUNDARY
 class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
@@ -64,6 +67,9 @@ export const ThemeContext = createContext({
   isBiometricEnabled: false,
   toggleBiometric: async (_value: boolean) => {},
   session: null as any,
+  showToast: (_msg: string, _tipo?: "success" | "error" | "info") => {},
+  notificacoesAtivas: false,
+  toggleNotificacoes: async (_value: boolean) => {},
 });
 
 export const useAppTheme = () => useContext(ThemeContext);
@@ -79,6 +85,27 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
+
+  // Toast
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastTipo, setToastTipo] = useState<"success" | "error" | "info">("success");
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (msg: string, tipo: "success" | "error" | "info" = "success") => {
+    setToastMsg(msg);
+    setToastTipo(tipo);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastOpacity.setValue(1);
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastOpacity, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }).start();
+    }, 1800);
+  };
 
   // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
@@ -139,6 +166,34 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Solicita permissão de notificação na primeira sessão do usuário neste dispositivo
+  useEffect(() => {
+    if (!session) return;
+    const chave = `@notificacoes_perguntado_${session.user.id}`;
+    AsyncStorage.getItem(chave).then((val) => {
+      if (val !== null) return;
+      AsyncStorage.setItem(chave, "true");
+      Alert.alert(
+        "🔔 Notificações",
+        "Deseja receber lembretes de lançamentos vencendo e avisos semanais para manter suas finanças em dia?",
+        [
+          { text: "Não, obrigado", style: "cancel" },
+          {
+            text: "Sim, quero!",
+            onPress: async () => {
+              const concedida = await pedirPermissaoNotificacoes();
+              if (concedida) {
+                setNotificacoesAtivas(true);
+                await AsyncStorage.setItem("@notificacoes_enabled", "true");
+                Alert.alert("Ativado!", "Você receberá notificações sobre seus lançamentos.");
+              }
+            },
+          },
+        ]
+      );
+    });
+  }, [session?.user?.id]);
+
   // Guarda de rotas: redireciona conforme estado de autenticação
   useEffect(() => {
     if (!isReady || !isAuthReady) return;
@@ -163,6 +218,9 @@ export default function RootLayout() {
       const biometriaAtiva = biometriaSalva === "true";
       setIsBiometricEnabled(biometriaAtiva);
 
+      const notifSalva = await AsyncStorage.getItem("@notificacoes_enabled");
+      setNotificacoesAtivas(notifSalva === "true");
+
       if (biometriaAtiva) {
         verificarBiometria();
       } else {
@@ -173,6 +231,18 @@ export default function RootLayout() {
     } finally {
       setIsReady(true);
     }
+  };
+
+  const toggleNotificacoes = async (value: boolean) => {
+    if (value) {
+      const concedida = await pedirPermissaoNotificacoes();
+      if (!concedida) {
+        Alert.alert("Permissão Negada", "Para ativar as notificações, habilite-as nas configurações do seu celular.");
+        return;
+      }
+    }
+    setNotificacoesAtivas(value);
+    await AsyncStorage.setItem("@notificacoes_enabled", value ? "true" : "false");
   };
 
   const verificarBiometria = async () => {
@@ -227,20 +297,32 @@ export default function RootLayout() {
     );
   }
 
+  const toastCor = toastTipo === "error" ? "#E76F51" : toastTipo === "info" ? "#457B9D" : "#2A9D8F";
+
   return (
-    <ErrorBoundary>
-      <ThemeContext.Provider value={{ isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session }}>
-        <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="login" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="reset-password" />
-            <Stack.Screen name="email-confirmed" />
-          </Stack>
-          <StatusBar style={isDark ? "light" : "dark"} />
-        </ThemeProvider>
-      </ThemeContext.Provider>
-    </ErrorBoundary>
+    <View style={{ flex: 1 }}>
+      <ErrorBoundary>
+        <ThemeContext.Provider value={{ isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes }}>
+          <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="login" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="reset-password" />
+              <Stack.Screen name="email-confirmed" />
+            </Stack>
+            <StatusBar style={isDark ? "light" : "dark"} />
+          </ThemeProvider>
+        </ThemeContext.Provider>
+      </ErrorBoundary>
+
+      {/* Toast global */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.toast, { backgroundColor: toastCor, opacity: toastOpacity }]}
+      >
+        <Text style={styles.toastText}>{toastMsg}</Text>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -249,4 +331,20 @@ const styles = StyleSheet.create({
   lockTitle: { fontSize: 22, fontWeight: "bold", marginVertical: 20 },
   button: { backgroundColor: "#2A9D8F", padding: 15, borderRadius: 10 },
   buttonText: { color: "#FFF", fontWeight: "bold" },
+  toast: {
+    position: "absolute",
+    bottom: 90,
+    left: 24,
+    right: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    alignItems: "center",
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  toastText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
 });
