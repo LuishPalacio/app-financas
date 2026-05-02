@@ -58,6 +58,8 @@ export default function ConfiguracoesScreen() {
     onConfirm: () => void;
   } | null>(null);
 
+  const [modalInfo, setModalInfo] = useState<{ titulo: string; mensagem: string; cor?: string } | null>(null);
+
   // Feedback
   const [modalFeedbackVisivel, setModalFeedbackVisivel] = useState(false);
   const [tipoFeedback, setTipoFeedback] = useState<"problema" | "sugestao" | "reclamação">("sugestao");
@@ -265,14 +267,14 @@ export default function ConfiguracoesScreen() {
 
       const { error: erroDeletar } = await supabase.rpc("delete_user");
       if (erroDeletar) {
-        Alert.alert("Erro", "Não foi possível remover o login. Tente novamente ou contate o suporte.");
+        setModalInfo({ titulo: "Erro", mensagem: "Não foi possível remover o login. Tente novamente ou contate o suporte.", cor: "#FF4444" });
         return;
       }
 
       await supabase.auth.signOut();
-      Alert.alert("Conta apagada", "Sua conta e todos os dados foram removidos com sucesso.");
+      setModalInfo({ titulo: "Conta apagada", mensagem: "Sua conta e todos os dados foram removidos com sucesso.", cor: "#2A9D8F" });
     } catch (error) {
-      Alert.alert("Erro", "Não foi possível apagar todos os dados. Tente novamente.");
+      setModalInfo({ titulo: "Erro", mensagem: "Não foi possível apagar todos os dados. Tente novamente.", cor: "#FF4444" });
     }
   };
 
@@ -510,6 +512,24 @@ export default function ConfiguracoesScreen() {
             )}
           </View>
         </View>
+      )}
+
+      {/* MODAL INFO/AVISO */}
+      {modalInfo && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalInfo(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ width: "100%", backgroundColor: Cores.card, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalInfo.cor ?? "#2A9D8F" }}>
+              <Text style={{ color: Cores.texto, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>{modalInfo.titulo}</Text>
+              <Text style={{ color: Cores.secundario, fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>{modalInfo.mensagem}</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: modalInfo.cor ?? "#2A9D8F", paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={() => setModalInfo(null)}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* MODAL CONFIRMAÇÃO */}

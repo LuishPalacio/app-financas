@@ -100,6 +100,10 @@ export default function CaixinhasScreen() {
   const [iconeEditCaixa, setIconeEditCaixa] = useState("savings");
   const [compartilhadoEditCaixa, setCompartilhadoEditCaixa] = useState(false);
 
+  // Modais de aviso e confirmação de deleção
+  const [modalAvisoCaixinha, setModalAvisoCaixinha] = useState<{ titulo: string; mensagem: string } | null>(null);
+  const [modalConfirmarDeletar, setModalConfirmarDeletar] = useState<Caixinha | null>(null);
+
   // Modal movimento
   const [modalMovimentoVisivel, setModalMovimentoVisivel] = useState(false);
   const [caixaSelecionada, setCaixaSelecionada] = useState<Caixinha | null>(null);
@@ -208,16 +212,12 @@ export default function CaixinhasScreen() {
   const deletarCaixinha = (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
     if (Number(caixa.saldo_atual) > 0) {
-      return Alert.alert(
-        "Ação não permitida",
-        `O objetivo "${caixa.nome}" ainda possui R$ ${Number(caixa.saldo_atual).toFixed(2)} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
-        [{ text: "Entendi", style: "cancel" }]
-      );
+      return setModalAvisoCaixinha({
+        titulo: "Ação não permitida",
+        mensagem: `O objetivo "${caixa.nome}" ainda possui R$ ${Number(caixa.saldo_atual).toFixed(2)} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
+      });
     }
-    Alert.alert("Apagar Objetivo", `Tem certeza que quer apagar "${caixa.nome}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Apagar", style: "destructive", onPress: async () => { await supabase.from("caixinhas").delete().eq("id", caixa.id); carregarDados(); } },
-    ]);
+    setModalConfirmarDeletar(caixa);
   };
 
   const abrirMovimento = (caixa: Caixinha) => {
@@ -444,6 +444,55 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL AVISO CAIXINHA */}
+      {modalAvisoCaixinha && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalAvisoCaixinha(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ width: "100%", backgroundColor: Cores.cardFundo, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: "#E76F51" }}>
+              <Text style={{ color: Cores.textoPrincipal, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>{modalAvisoCaixinha.titulo}</Text>
+              <Text style={{ color: Cores.textoSecundario, fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>{modalAvisoCaixinha.mensagem}</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: "#E76F51", paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={() => setModalAvisoCaixinha(null)}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Entendi</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* MODAL CONFIRMAR DELETAR CAIXINHA */}
+      {modalConfirmarDeletar && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalConfirmarDeletar(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ width: "100%", backgroundColor: Cores.cardFundo, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: "#FF4444" }}>
+              <Text style={{ color: Cores.textoPrincipal, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>Apagar Objetivo</Text>
+              <Text style={{ color: Cores.textoSecundario, fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>
+                Tem certeza que quer apagar "{modalConfirmarDeletar.nome}"?
+              </Text>
+              <TouchableOpacity
+                style={{ backgroundColor: "#FF4444", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 10 }}
+                onPress={async () => {
+                  const caixa = modalConfirmarDeletar;
+                  setModalConfirmarDeletar(null);
+                  await supabase.from("caixinhas").delete().eq("id", caixa.id);
+                  carregarDados();
+                }}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Apagar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ backgroundColor: Cores.pillFundo, paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={() => setModalConfirmarDeletar(null)}
+              >
+                <Text style={{ color: Cores.textoSecundario, fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* MODAL EDITAR CAIXINHA */}
       <Modal animationType="slide" transparent visible={modalEditarVisivel} onRequestClose={() => setModalEditarVisivel(false)}>

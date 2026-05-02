@@ -6,6 +6,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -33,6 +34,7 @@ export default function LoginScreen() {
   const [tentativasFalhadas, setTentativasFalhadas] = useState(0);
   const [bloqueadoAte, setBloqueadoAte] = useState<number | null>(null);
   const [segundosRestantes, setSegundosRestantes] = useState(0);
+  const [modalErro, setModalErro] = useState<{ titulo: string; mensagem: string; cor?: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -90,20 +92,18 @@ export default function LoginScreen() {
       setTentativasFalhadas(novasTentativas);
       if (novasTentativas >= 3) {
         setBloqueadoAte(Date.now() + 30000);
-        Alert.alert(
-          "Bloqueado",
-          "3 tentativas incorretas. Aguarde 30 segundos.",
-        );
+        setModalErro({ titulo: "Bloqueado", mensagem: "3 tentativas incorretas. Aguarde 30 segundos.", cor: "#FF4444" });
       } else {
         const mensagemErro =
           error.message.includes("Invalid login credentials") ||
           error.message.includes("invalid_credentials")
             ? "E-mail ou senha incorretos."
             : "Não foi possível entrar. Verifique suas credenciais.";
-        Alert.alert(
-          "Erro ao entrar",
-          `${mensagemErro} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`,
-        );
+        setModalErro({
+          titulo: "Erro ao entrar",
+          mensagem: `${mensagemErro} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`,
+          cor: "#E76F51",
+        });
       }
     } else {
       router.replace("/(tabs)");
@@ -432,6 +432,23 @@ export default function LoginScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {modalErro && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalErro(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ width: "100%", backgroundColor: "#1E1E1E", borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalErro.cor ?? "#E76F51" }}>
+              <Text style={{ color: "#FFF", fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>{modalErro.titulo}</Text>
+              <Text style={{ color: "#AAAAAA", fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>{modalErro.mensagem}</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: modalErro.cor ?? "#E76F51", paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={() => setModalErro(null)}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </KeyboardAvoidingView>
   );
 }
