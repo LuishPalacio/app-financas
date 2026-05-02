@@ -321,11 +321,38 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       role: "ia",
       texto: "Olá! Sou o assistente financeiro do FinFlow.\n\nPosso ajudar você a:\n• Criar receitas e despesas\n• Gerenciar contas e objetivos\n• Analisar seus gastos (regra 50/30/20)\n• Definir e acompanhar metas\n\nO que deseja fazer?",
     };
+    try {
+      const hoje = new Date().toDateString();
+      const [savedMsgs, savedDate] = await Promise.all([
+        AsyncStorage.getItem(`@historico_chat_${session?.user?.id}`),
+        AsyncStorage.getItem(`@historico_chat_date_${session?.user?.id}`),
+      ]);
+      if (savedMsgs && savedDate === hoje) {
+        const msgs: Mensagem[] = JSON.parse(savedMsgs);
+        if (msgs.length > 0) { setMensagens(msgs); return; }
+      }
+    } catch {}
     setMensagens([boasVindas]);
   };
 
   useEffect(() => { inicializarChat(); carregarContexto(); }, []);
-  useEffect(() => { if (mensagens.length > 0) AsyncStorage.setItem(`@historico_chat_${session?.user?.id}`, JSON.stringify(mensagens)); }, [mensagens]);
+  useEffect(() => {
+    if (mensagens.length > 0) {
+      const hoje = new Date().toDateString();
+      AsyncStorage.setItem(`@historico_chat_${session?.user?.id}`, JSON.stringify(mensagens));
+      AsyncStorage.setItem(`@historico_chat_date_${session?.user?.id}`, hoje);
+    }
+  }, [mensagens]);
+
+  const mapearCor = (cor: string): string => {
+    const mapa: Record<string, string> = {
+      "verde": "#2A9D8F", "coral": "#E76F51", "laranja": "#EC7000",
+      "azul": "#457B9D", "roxo": "#8A05BE", "azul escuro": "#264653",
+      "vermelho": "#CC092F", "verde claro": "#8AB17D", "laranja claro": "#F4A261",
+    };
+    const key = (cor || "").toLowerCase().trim();
+    return mapa[key] || (cor?.startsWith("#") ? cor : "#2A9D8F");
+  };
 
   const converterData = (data: string | undefined): string => {
     if (!data) return new Date().toISOString().split("T")[0];
@@ -388,10 +415,13 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
   const criarConta = async (data: Record<string, any>): Promise<string> => {
     const nome = data.nome || data.account_name || "Nova Conta";
-    const base = { user_id: session?.user?.id, nome, saldo_inicial: Number(data.saldo_inicial || 0), arquivado: false };
-    let res = await supabase.from("contas").insert({ ...base, cor: data.cor || "#2A9D8F" });
-    if (res.error) res = await supabase.from("contas").insert(base);
-    if (res.error) return `Erro ao criar conta: ${res.error.message}`;
+    const { error } = await supabase.from("contas").insert({
+      user_id: session?.user?.id, nome,
+      saldo_inicial: Number(data.saldo_inicial || 0),
+      cor: mapearCor(data.cor || "verde"),
+      arquivado: false,
+    });
+    if (error) return `Erro ao criar conta: ${error.message}`;
     await carregarContexto();
     return `✅ Conta "${nome}" criada com saldo de R$ ${Number(data.saldo_inicial || 0).toFixed(2)}!`;
   };
@@ -403,7 +433,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       nome: data.nome || "Novo Objetivo",
       meta_valor: Number(data.meta_valor || 0),
       saldo_atual: saldoInicial,
-      cor: data.cor || "#2A9D8F",
+      cor: mapearCor(data.cor || "verde"),
       icone: data.icone || "savings",
     });
     if (error) return `Erro ao criar objetivo: ${error.message}`;
@@ -487,7 +517,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     if (existe) return `Já existe uma categoria de ${tipo} com o nome "${nome}".`;
     const { error } = await supabase.from("categorias").insert({
       user_id: session?.user?.id, nome, tipo,
-      cor: data.cor || "#2A9D8F", icone: data.icone || "savings", ativa: 1,
+      cor: mapearCor(data.cor || "verde"), icone: data.icone || "savings", ativa: 1,
     });
     if (error) return `Erro ao criar categoria: ${error.message}`;
     await carregarContexto();
