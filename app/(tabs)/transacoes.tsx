@@ -259,6 +259,7 @@ export default function TransacoesScreen() {
       const base = descricaoBase(transacaoEditando.descricao);
       const { data: serie } = await supabase.from("transacoes")
         .select("id, descricao")
+        .eq("user_id", session.user.id)
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
       const ids = (serie ?? [])

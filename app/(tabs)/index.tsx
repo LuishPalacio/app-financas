@@ -112,7 +112,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
   );
   return (
     <View style={{ width: "100%" }}>
-      {dados.slice(0, 6).map((item, i) => {
+      {dados.map((item, i) => {
         const pct = total > 0 ? (item.valor / total) * 100 : 0;
         return (
           <View key={i} style={{ marginBottom: 10 }}>
@@ -121,9 +121,14 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
                 <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: item.cor, marginRight: 6 }} />
                 <Text style={{ flex: 1, fontSize: 12, color: isDark ? "#AAA" : "#555" }} numberOfLines={1}>{item.nome}</Text>
               </View>
-              <Text style={{ fontSize: 12, fontWeight: "bold", color: isDark ? "#FFF" : "#222" }}>
-                {pct.toFixed(0)}%
-              </Text>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ fontSize: 12, fontWeight: "bold", color: isDark ? "#FFF" : "#222" }}>
+                  {pct.toFixed(0)}%
+                </Text>
+                <Text style={{ fontSize: 10, color: isDark ? "#AAA" : "#666" }}>
+                  R$ {item.valor.toFixed(2)}
+                </Text>
+              </View>
             </View>
             <View style={{ height: 7, backgroundColor: isDark ? "#2C2C2C" : "#E8E8E8", borderRadius: 4, overflow: "hidden" }}>
               <View style={{ height: 7, width: `${pct}%`, backgroundColor: item.cor, borderRadius: 4 }} />
@@ -131,9 +136,6 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
           </View>
         );
       })}
-      {dados.length > 6 && (
-        <Text style={{ fontSize: 10, color: isDark ? "#666" : "#AAA", marginTop: 2 }}>+{dados.length - 6} outras categorias</Text>
-      )}
     </View>
   );
 };
@@ -217,14 +219,18 @@ export default function Dashboard() {
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
+  const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
+  const [qtdVencidas, setQtdVencidas] = useState(0);
 
   // --- Cálculos ---
-  const saldoInicialTotal = contas.filter(c => !c.arquivado).reduce((acc, curr) => acc + curr.saldo_inicial, 0);
+  const contasAtivas = contas.filter(c => !c.arquivado);
+  const contasAtivasIds = new Set(contasAtivas.map(c => c.id));
+  const saldoInicialTotal = contasAtivas.reduce((acc, curr) => acc + curr.saldo_inicial, 0);
   const receitasRealizadas = transacoes
-    .filter((t) => t.tipo === "receita" && t.status === "paga")
+    .filter((t) => t.tipo === "receita" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
     .reduce((acc, curr) => acc + curr.valor, 0);
   const despesasRealizadas = transacoes
-    .filter((t) => t.tipo === "despesa" && t.status === "paga")
+    .filter((t) => t.tipo === "despesa" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
     .reduce((acc, curr) => acc + curr.valor, 0);
   const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
 
@@ -242,16 +248,22 @@ export default function Dashboard() {
   const balancoMensal = receitasDoMes - despesasDoMes;
 
   // Dados para os gráficos de pizza
-  const dadosDespesasPorCat = categorias
-    .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
-    .map((cat) => {
-      const total = transacoesDoMes
-        .filter((t) => t.tipo === "despesa" && t.categoria_id === cat.id)
-        .reduce((acc, t) => acc + t.valor, 0);
-      return { cor: cat.cor, valor: total, nome: cat.nome };
-    })
-    .filter((d) => d.valor > 0)
-    .sort((a, b) => b.valor - a.valor);
+  const caixinhaGuardadoTotal = transacoesDoMes
+    .filter(t => t.tipo === "despesa" && (t.descricao || "").startsWith("Guardar em: "))
+    .reduce((acc, t) => acc + t.valor, 0);
+
+  const dadosDespesasPorCat = [
+    ...categorias
+      .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
+      .map((cat) => {
+        const total = transacoesDoMes
+          .filter((t) => t.tipo === "despesa" && t.categoria_id === cat.id)
+          .reduce((acc, t) => acc + t.valor, 0);
+        return { cor: cat.cor, valor: total, nome: cat.nome };
+      })
+      .filter((d) => d.valor > 0),
+    ...(caixinhaGuardadoTotal > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoTotal, nome: "Objetivos" }] : []),
+  ].sort((a, b) => b.valor - a.valor);
 
   const dadosReceitasPorCat = categorias
     .filter((c) => c.tipo === "receita" && c.ativa !== 0)
@@ -304,11 +316,8 @@ export default function Dashboard() {
         });
         if (vencidas.length > 0) {
           alertaVencidoMostrado.current = true;
-          Alert.alert(
-            "⚠️ Lançamentos Vencidos",
-            `Você tem ${vencidas.length} lançamento${vencidas.length > 1 ? "s" : ""} vencido${vencidas.length > 1 ? "s" : ""} sem resolver.\n\nAcesse o Histórico para regularizá-los.`,
-            [{ text: "Ok" }]
-          );
+          setQtdVencidas(vencidas.length);
+          setModalVencidosVisivel(true);
         }
       }
 
@@ -398,7 +407,7 @@ export default function Dashboard() {
     if (count && count > 0) {
       Alert.alert(
         "Categoria com Lançamentos",
-        `A categoria "${cat.nome}" possui ${count} transação(ões) vinculada(s) e não pode ser apagada.\n\nDeseja arquivá-la em vez disso?`,
+        `A categoria "${cat.nome}" possui lançamentos vinculados e não pode ser apagada.\n\nDeseja arquivá-la em vez disso?`,
         [
           { text: "Cancelar", style: "cancel" },
           {
@@ -1213,6 +1222,34 @@ export default function Dashboard() {
               })}
             </ScrollView>
             <Button title="Fechar" color="#999" onPress={() => setModalResumoVisivel(false)} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL LANÇAMENTOS VENCIDOS */}
+      <Modal animationType="fade" transparent visible={modalVencidosVisivel} onRequestClose={() => setModalVencidosVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 4, borderTopColor: "#E76F51" }]}>
+            <View style={{ alignItems: "center", marginBottom: 15 }}>
+              <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: "#E76F5122", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+                <MaterialIcons name="warning" size={32} color="#E76F51" />
+              </View>
+              <Text style={{ color: isDark ? "#FFF" : "#1A1A1A", fontSize: 18, fontWeight: "bold" }}>
+                Lançamentos Vencidos
+              </Text>
+            </View>
+            <Text style={{ color: isDark ? "#AAA" : "#555", textAlign: "center", fontSize: 15, marginBottom: 20, lineHeight: 22 }}>
+              Você tem{" "}
+              <Text style={{ color: "#E76F51", fontWeight: "bold" }}>{qtdVencidas}</Text>{" "}
+              lançamento{qtdVencidas > 1 ? "s" : ""} vencido{qtdVencidas > 1 ? "s" : ""} sem resolver.{"\n\n"}
+              Acesse o <Text style={{ fontWeight: "bold", color: isDark ? "#FFF" : "#1A1A1A" }}>Histórico</Text> para regularizá-los.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: "#E76F51", paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+              onPress={() => setModalVencidosVisivel(false)}
+            >
+              <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Entendido</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
