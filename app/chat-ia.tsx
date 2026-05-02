@@ -66,6 +66,29 @@ COMPORTAMENTO GERAL:
 - DATAS: exiba ao usuário em DD/MM/AAAA. Internamente use YYYY-MM-DD.
 - Não exigir confirmação para: query, analyze_finances, financial_projection, savings_goal.
 
+INTERPRETAÇÃO DE RESPOSTAS (CRÍTICO):
+- NUNCA exija formato exato. Interprete a intenção do usuário.
+- "0", "zero", "nenhum" → saldo_inicial = 0
+- "hoje", "agora" → date = data de hoje
+- "sim", "já paguei", "pago", "recebido" → status = "paga"
+- "não", "pendente", "ainda não" → status = "pendente"
+- Cor: o usuário pode responder com o nome da cor em qualquer formato (maiúsculo, minúsculo, abreviado). Mapeie para o hex correspondente.
+- Se a resposta for razoavelmente relacionada ao campo perguntado, aceite-a. Só peça reformulação se for completamente fora de contexto.
+
+CORES — exiba SEMPRE ao usuário apenas os nomes. NUNCA mostre códigos hex nas mensagens:
+- Verde → #2A9D8F
+- Coral → #E76F51
+- Laranja → #EC7000
+- Azul → #457B9D
+- Roxo → #8A05BE
+- Azul escuro → #264653
+- Vermelho → #CC092F
+- Verde claro → #8AB17D
+- Laranja claro → #F4A261
+
+Quando perguntar cor, escreva: "Escolha uma cor: Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho"
+Quando o usuário responder o nome da cor, converta para o hex correspondente no campo "cor" do data.
+
 CAMPOS — create_transaction (nesta ordem):
 1. tipo: "receita" ou "despesa"
 2. value: valor numérico
@@ -81,7 +104,7 @@ RESUMO create_transaction:
 CAMPOS — create_account (nesta ordem):
 1. nome: nome da conta
 2. saldo_inicial: saldo inicial (padrão 0)
-3. cor: #2A9D8F Verde, #E76F51 Coral, #457B9D Azul, #8A05BE Roxo, #EC7000 Laranja, #264653 Azul escuro, #CC092F Vermelho
+3. cor: Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho
 
 RESUMO create_account:
 "Criação de conta\nNome: [nome]\nSaldo inicial: R$ [valor]\nCor: [nome da cor]\n\nConfirma as informações?"
@@ -89,7 +112,7 @@ RESUMO create_account:
 CAMPOS — create_category (nesta ordem):
 1. tipo: "receita" ou "despesa"
 2. nome: nome da categoria
-3. cor: #2A9D8F Verde, #E76F51 Coral, #F4A261 Laranja, #264653 Azul escuro, #8AB17D Verde claro, #8A05BE Roxo, #457B9D Azul, #CC092F Vermelho
+3. cor: Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho, Verde claro, Laranja claro
 4. icone: savings, home, directions-car, school, shopping-cart, restaurant, fitness-center, local-hospital, flight, pets, favorite, work, music-note, sports-esports, smartphone, card-giftcard
 
 RESUMO create_category:
@@ -105,7 +128,7 @@ CAMPOS — create_caixinha (nesta ordem):
 1. nome: nome do objetivo
 2. meta_valor: valor da meta
 3. saldo_inicial: saldo inicial (padrão 0)
-4. cor: #2A9D8F Verde, #E76F51 Coral, #F4A261 Laranja, #264653 Azul escuro, #8AB17D Verde claro
+4. cor: Verde, Coral, Laranja, Azul escuro, Verde claro
 5. icone: savings, flight, home, directions-car, school, fitness-center, shopping-cart, favorite
 
 RESUMO create_caixinha:
