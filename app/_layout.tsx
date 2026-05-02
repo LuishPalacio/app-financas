@@ -111,6 +111,20 @@ export default function RootLayout() {
   const url = Linking.useURL();
   useEffect(() => {
     if (!url) return;
+
+    // Fluxo PKCE (Supabase moderno): code= nos query params
+    try {
+      const parsed = new URL(url);
+      const code = parsed.searchParams.get("code");
+      if (code) {
+        supabase.auth.exchangeCodeForSession(code).catch((e) =>
+          console.log("Erro ao trocar código:", e)
+        );
+        return;
+      }
+    } catch {}
+
+    // Fluxo implícito (legado): tokens no fragmento #
     const fragment = url.split("#")[1];
     if (!fragment) return;
     const params = Object.fromEntries(new URLSearchParams(fragment));
