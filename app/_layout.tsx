@@ -166,6 +166,14 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Load per-user notification preference
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    AsyncStorage.getItem(`@notificacoes_enabled_${session.user.id}`).then((val) => {
+      setNotificacoesAtivas(val === "true");
+    });
+  }, [session?.user?.id]);
+
   // Solicita permissão de notificação na primeira sessão do usuário neste dispositivo
   useEffect(() => {
     if (!session) return;
@@ -184,7 +192,7 @@ export default function RootLayout() {
               const concedida = await pedirPermissaoNotificacoes();
               if (concedida) {
                 setNotificacoesAtivas(true);
-                await AsyncStorage.setItem("@notificacoes_enabled", "true");
+                await AsyncStorage.setItem(`@notificacoes_enabled_${session.user.id}`, "true");
                 Alert.alert("Ativado!", "Você receberá notificações sobre seus lançamentos.");
               }
             },
@@ -218,9 +226,6 @@ export default function RootLayout() {
       const biometriaAtiva = biometriaSalva === "true";
       setIsBiometricEnabled(biometriaAtiva);
 
-      const notifSalva = await AsyncStorage.getItem("@notificacoes_enabled");
-      setNotificacoesAtivas(notifSalva === "true");
-
       if (biometriaAtiva) {
         verificarBiometria();
       } else {
@@ -242,7 +247,7 @@ export default function RootLayout() {
       }
     }
     setNotificacoesAtivas(value);
-    await AsyncStorage.setItem("@notificacoes_enabled", value ? "true" : "false");
+    await AsyncStorage.setItem(`@notificacoes_enabled_${session?.user?.id}`, value ? "true" : "false");
   };
 
   const verificarBiometria = async () => {

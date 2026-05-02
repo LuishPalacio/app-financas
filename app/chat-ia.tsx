@@ -202,20 +202,12 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   const inicializarChat = async () => {
-    const salvo = await AsyncStorage.getItem(`@historico_chat_${session?.user?.id}`);
-    if (salvo) {
-      try {
-        const parsed: Mensagem[] = JSON.parse(salvo);
-        if (parsed.length > 0) { setMensagens(parsed); return; }
-      } catch (_) {}
-    }
     const boasVindas: Mensagem = {
       id: "1",
       role: "ia",
       texto: "Olá! Sou o assistente financeiro do FinFlow.\n\nPosso ajudar você a:\n• Criar receitas e despesas\n• Gerenciar contas e objetivos\n• Analisar seus gastos (regra 50/30/20)\n• Definir e acompanhar metas\n\nO que deseja fazer?",
     };
     setMensagens([boasVindas]);
-    await salvarMensagem("ia", boasVindas.texto);
   };
 
   useEffect(() => { inicializarChat(); carregarContexto(); }, []);

@@ -88,6 +88,7 @@ export default function TransacoesScreen() {
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<"todas" | "receita" | "despesa" | "transferencia">("todas");
+  const [filtroVencidas, setFiltroVencidas] = useState(false);
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 30;
 
@@ -105,6 +106,13 @@ export default function TransacoesScreen() {
   const [editCategoriaId, setEditCategoriaId] = useState<number | null>(null);
   const [editContaId, setEditContaId] = useState<number | null>(null);
   const [mostrarCalendarioEdit, setMostrarCalendarioEdit] = useState(false);
+  const [modalOpcoesSerie, setModalOpcoesSerie] = useState<{
+    titulo: string; descricao: string;
+    labelSimples: string; labelSerie: string;
+    onSimples: () => void; onSerie: () => void;
+    corSerie?: string;
+  } | null>(null);
+  const [modalDeleteSimples, setModalDeleteSimples] = useState<Transacao | null>(null);
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -199,31 +207,25 @@ export default function TransacoesScreen() {
     const parceladaMatch = descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
 
     if (isFixa || parceladaMatch) {
-      Alert.alert(
-        "Apagar Agendamento",
-        "Esta transação faz parte de uma série recorrente. O que deseja apagar?",
-        [
-          { text: "Cancelar", style: "cancel" },
-          { text: "Apenas esta", onPress: () => executarDeleteUma(transacao) },
-          {
-            text: "Toda a série",
-            style: "destructive",
-            onPress: () => {
-              if (isFixa) {
-                const base = descricao.replace(/ \(Fixa\)$/, "");
-                deletarSerie(base, "fixa");
-              } else if (parceladaMatch) {
-                deletarSerie(parceladaMatch[1], "parcelada", parceladaMatch[3]);
-              }
-            },
-          },
-        ]
-      );
+      setModalOpcoesSerie({
+        titulo: "Apagar Agendamento",
+        descricao: "Esta transação faz parte de uma série recorrente. O que deseja apagar?",
+        labelSimples: "Apenas esta",
+        labelSerie: "Toda a série",
+        corSerie: "#E76F51",
+        onSimples: () => { setModalOpcoesSerie(null); executarDeleteUma(transacao); },
+        onSerie: () => {
+          setModalOpcoesSerie(null);
+          if (isFixa) {
+            const base = descricao.replace(/ \(Fixa\)$/, "");
+            deletarSerie(base, "fixa");
+          } else if (parceladaMatch) {
+            deletarSerie(parceladaMatch[1], "parcelada", parceladaMatch[3]);
+          }
+        },
+      });
     } else {
-      Alert.alert("Excluir", "Tem certeza que deseja apagar esta transação?", [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Apagar", style: "destructive", onPress: () => executarDeleteUma(transacao) },
-      ]);
+      setModalDeleteSimples(transacao);
     }
   };
 
@@ -257,16 +259,26 @@ export default function TransacoesScreen() {
       if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
     } else {
       const base = descricaoBase(transacaoEditando.descricao);
+      const novoBase = descricaoBase(editDescricao);
+      const novoDia = editData.getDate();
       const { data: serie } = await supabase.from("transacoes")
-        .select("id, descricao")
+        .select("id, descricao, data_vencimento")
         .eq("user_id", session.user.id)
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
-      const ids = (serie ?? [])
-        .filter((t) => descricaoBase(t.descricao) === base)
-        .map((t) => t.id);
-      if (ids.length > 0) {
-        const { error } = await supabase.from("transacoes").update(campos).in("id", ids);
+      const itens = (serie ?? []).filter((t) => descricaoBase(t.descricao) === base);
+      for (const item of itens) {
+        const partes = (item.data_vencimento || dataFormatada).split("-");
+        const ano = parseInt(partes[0]);
+        const mes = parseInt(partes[1]) - 1;
+        const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+        const diaFinal = Math.min(novoDia, diasNoMes);
+        const novaData = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
+        const sufixo = item.descricao.slice(descricaoBase(item.descricao).length);
+        const novaDescricao = novoBase + sufixo;
+        const { error } = await supabase.from("transacoes").update({
+          ...campos, descricao: novaDescricao, data_vencimento: novaData,
+        }).eq("id", item.id);
         if (error) return Alert.alert("Erro", "Não foi possível atualizar a série.");
       }
     }
@@ -282,15 +294,14 @@ export default function TransacoesScreen() {
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
 
     if (isRecorrente(transacaoEditando)) {
-      Alert.alert(
-        "Editar Recorrência",
-        "Deseja alterar apenas este lançamento ou toda a série?",
-        [
-          { text: "Cancelar", style: "cancel" },
-          { text: "Só este", onPress: () => executarEdicao(true) },
-          { text: "Toda a série", onPress: () => executarEdicao(false) },
-        ]
-      );
+      setModalOpcoesSerie({
+        titulo: "Editar Recorrência",
+        descricao: "Deseja alterar apenas este lançamento ou toda a série?",
+        labelSimples: "Só este",
+        labelSerie: "Toda a série",
+        onSimples: () => { setModalOpcoesSerie(null); executarEdicao(true); },
+        onSerie: () => { setModalOpcoesSerie(null); executarEdicao(false); },
+      });
     } else {
       executarEdicao(true);
     }
@@ -320,8 +331,15 @@ export default function TransacoesScreen() {
     setFiltroCategorias((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
   };
 
+  const hojeRef = new Date(); hojeRef.setHours(0, 0, 0, 0);
+
   const transacoesDoMes = transacoes
     .filter((t) => {
+      if (filtroVencidas) {
+        const p = (t.data_vencimento || "0000-00-00").split("-");
+        const d = new Date(+p[0], +p[1] - 1, +p[2]);
+        return t.status === "pendente" && d < hojeRef;
+      }
       const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
       const dataSegura = t.data_vencimento || new Date().toISOString().split("T")[0];
       const passaMes = dataSegura.startsWith(mesSelecionado);
@@ -351,11 +369,29 @@ export default function TransacoesScreen() {
 
   const mesesDoAno = Array.from({ length: 12 }, (_, i) => `${anoSelecionado}-${String(i + 1).padStart(2, "0")}`);
 
+  const temVencidas = transacoes.some(t => {
+    if (t.status !== "pendente") return false;
+    const p = (t.data_vencimento || "0000-00-00").split("-");
+    return new Date(+p[0], +p[1] - 1, +p[2]) < hojeRef;
+  });
+  const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas;
+  const limparFiltros = () => {
+    setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setPaginaAtual(1);
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
       {/* CABEÇALHO */}
       <View style={[styles.header, { backgroundColor: Cores.fundo }]}>
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Extrato</Text>
+        {temVencidas && (
+          <TouchableOpacity
+            onPress={() => { setFiltroVencidas(!filtroVencidas); setPaginaAtual(1); }}
+            style={{ padding: 6, borderRadius: 20, backgroundColor: filtroVencidas ? "#E76F5133" : "transparent" }}
+          >
+            <MaterialIcons name={filtroVencidas ? "close" : "warning"} size={24} color="#E76F51" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* NAVEGADOR DE ANO */}
@@ -392,6 +428,16 @@ export default function TransacoesScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {temFiltroAtivo && (
+        <TouchableOpacity
+          onPress={limparFiltros}
+          style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 6, marginHorizontal: 15, marginBottom: 8, borderRadius: 8, backgroundColor: "#E76F5122" }}
+        >
+          <MaterialIcons name="close" size={14} color="#E76F51" />
+          <Text style={{ color: "#E76F51", fontSize: 13, fontWeight: "600", marginLeft: 4 }}>Limpar filtros</Text>
+        </TouchableOpacity>
+      )}
 
       {/* SELETOR DE MÊS */}
       <View style={styles.mesesScrollContainer}>
@@ -711,6 +757,67 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* MODAL OPÇÕES SÉRIE */}
+      {modalOpcoesSerie && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesSerie(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>{modalOpcoesSerie.titulo}</Text>
+              <Text style={{ color: isDark ? "#AAA" : "#555", textAlign: "center", marginBottom: 24, fontSize: 14, lineHeight: 20 }}>
+                {modalOpcoesSerie.descricao}
+              </Text>
+              <TouchableOpacity
+                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#457B9D", marginBottom: 10 }}
+                onPress={modalOpcoesSerie.onSimples}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelSimples}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: modalOpcoesSerie.corSerie ?? "#2A9D8F", marginBottom: 10 }}
+                onPress={modalOpcoesSerie.onSerie}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelSerie}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }}
+                onPress={() => setModalOpcoesSerie(null)}
+              >
+                <Text style={{ color: isDark ? "#AAA" : "#666", fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* MODAL CONFIRMAR DELETE SIMPLES */}
+      {modalDeleteSimples && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalDeleteSimples(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 3, borderTopColor: "#E76F51" }]}>
+              <View style={{ alignItems: "center", marginBottom: 12 }}>
+                <MaterialIcons name="delete-outline" size={36} color="#E76F51" />
+              </View>
+              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>Excluir</Text>
+              <Text style={{ color: isDark ? "#AAA" : "#555", textAlign: "center", marginBottom: 24, fontSize: 14 }}>
+                Tem certeza que deseja apagar esta transação?
+              </Text>
+              <TouchableOpacity
+                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#E76F51", marginBottom: 10 }}
+                onPress={() => { const t = modalDeleteSimples; setModalDeleteSimples(null); executarDeleteUma(t); }}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Apagar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }}
+                onPress={() => setModalDeleteSimples(null)}
+              >
+                <Text style={{ color: isDark ? "#AAA" : "#666", fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       <Modal animationType="fade" transparent visible={modalFiltroTipo} onRequestClose={() => setModalFiltroTipo(false)}>
         <View style={styles.modalOverlay}>

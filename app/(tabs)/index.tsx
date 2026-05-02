@@ -219,6 +219,7 @@ export default function Dashboard() {
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
+  const [modoDistribuicao, setModoDistribuicao] = useState<"todos" | "realizados">("todos");
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
   const [qtdVencidas, setQtdVencidas] = useState(0);
 
@@ -276,6 +277,38 @@ export default function Dashboard() {
     .filter((d) => d.valor > 0)
     .sort((a, b) => b.valor - a.valor);
 
+  // Data for "realized only" mode
+  const receitasDoMesRealizadas = transacoesDoMes.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+  const despesasDoMesRealizadas = transacoesDoMes.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+
+  const caixinhaGuardadoRealizado = transacoesDoMes
+    .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.descricao || "").startsWith("Guardar em: "))
+    .reduce((acc, t) => acc + t.valor, 0);
+
+  const dadosDespesasPorCatRealizadas = [
+    ...categorias
+      .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
+      .map((cat) => {
+        const total = transacoesDoMes
+          .filter(t => t.tipo === "despesa" && t.status === "paga" && t.categoria_id === cat.id)
+          .reduce((acc, t) => acc + t.valor, 0);
+        return { cor: cat.cor, valor: total, nome: cat.nome };
+      })
+      .filter((d) => d.valor > 0),
+    ...(caixinhaGuardadoRealizado > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoRealizado, nome: "Objetivos" }] : []),
+  ].sort((a, b) => b.valor - a.valor);
+
+  const dadosReceitasPorCatRealizadas = categorias
+    .filter((c) => c.tipo === "receita" && c.ativa !== 0)
+    .map((cat) => {
+      const total = transacoesDoMes
+        .filter(t => t.tipo === "receita" && t.status === "paga" && t.categoria_id === cat.id)
+        .reduce((acc, t) => acc + t.valor, 0);
+      return { cor: cat.cor, valor: total, nome: cat.nome };
+    })
+    .filter((d) => d.valor > 0)
+    .sort((a, b) => b.valor - a.valor);
+
   // --- Dados ---
   const carregarDados = async () => {
     if (!session?.user?.id) return;
@@ -323,7 +356,7 @@ export default function Dashboard() {
 
       // Agenda notificações locais com base nos dados do dia
       if (notificacoesAtivas && resTransacoes.data) {
-        agendarNotificacoesDoApp(resTransacoes.data);
+        agendarNotificacoesDoApp(resTransacoes.data, session.user.id);
       }
     } catch (error) {
       const catCache = await AsyncStorage.getItem("@cache_categorias");
@@ -777,9 +810,25 @@ export default function Dashboard() {
 
         {/* GRÁFICOS DE PIZZA */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal, marginBottom: 15 }]}>
-            Distribuição do Mês
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 }}>
+            <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}>
+              Distribuição do Mês
+            </Text>
+            <View style={{ flexDirection: "row", backgroundColor: Cores.pillFundo, borderRadius: 8, padding: 3 }}>
+              <TouchableOpacity
+                onPress={() => setModoDistribuicao("todos")}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: modoDistribuicao === "todos" ? (isDark ? "#444" : "#FFF") : "transparent" }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "600", color: modoDistribuicao === "todos" ? Cores.textoPrincipal : Cores.textoSecundario }}>Tudo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setModoDistribuicao("realizados")}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: modoDistribuicao === "realizados" ? "#2A9D8F" : "transparent" }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "600", color: modoDistribuicao === "realizados" ? "#FFF" : Cores.textoSecundario }}>Realizados</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Despesas por categoria */}
           <View style={[styles.graficoCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
@@ -787,10 +836,14 @@ export default function Dashboard() {
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#E76F51", marginRight: 8 }} />
               <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Despesas por Categoria</Text>
             </View>
-            <BarChartCategorias dados={dadosDespesasPorCat} total={despesasDoMes} isDark={isDark} />
-            {despesasDoMes > 0 && (
+            <BarChartCategorias
+              dados={modoDistribuicao === "realizados" ? dadosDespesasPorCatRealizadas : dadosDespesasPorCat}
+              total={modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes}
+              isDark={isDark}
+            />
+            {(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes) > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: R$ {despesasDoMes.toFixed(2)}
+                Total: R$ {(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes).toFixed(2)}
               </Text>
             )}
           </View>
@@ -801,10 +854,14 @@ export default function Dashboard() {
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#8AB17D", marginRight: 8 }} />
               <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Receitas por Categoria</Text>
             </View>
-            <BarChartCategorias dados={dadosReceitasPorCat} total={receitasDoMes} isDark={isDark} />
-            {receitasDoMes > 0 && (
+            <BarChartCategorias
+              dados={modoDistribuicao === "realizados" ? dadosReceitasPorCatRealizadas : dadosReceitasPorCat}
+              total={modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes}
+              isDark={isDark}
+            />
+            {(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes) > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: R$ {receitasDoMes.toFixed(2)}
+                Total: R$ {(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes).toFixed(2)}
               </Text>
             )}
           </View>

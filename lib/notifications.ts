@@ -37,12 +37,22 @@ export async function notificacoesEstaoAtivas(): Promise<boolean> {
   }
 }
 
+export async function notificacoesEstaoAtivasPara(userId: string): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(`@notificacoes_enabled_${userId}`);
+    return val === "true";
+  } catch {
+    return false;
+  }
+}
+
 export async function agendarNotificacoesDoApp(
-  transacoes: { status: string; data_vencimento: string; tipo: string }[]
+  transacoes: { status: string; data_vencimento: string; tipo: string }[],
+  userId: string
 ) {
   if (!Notif || Platform.OS === "web") return;
   try {
-    const ativas = await notificacoesEstaoAtivas();
+    const ativas = await notificacoesEstaoAtivasPara(userId);
     if (!ativas) return;
 
     await Notif.cancelAllScheduledNotificationsAsync();

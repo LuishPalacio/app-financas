@@ -5,6 +5,7 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -51,6 +52,11 @@ export default function ConfiguracoesScreen() {
   const [novaSenhaConfirm, setNovaSenhaConfirm] = useState("");
   const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
   const [mostrarConfirmSenha, setMostrarConfirmSenha] = useState(false);
+
+  const [modalConfirmarAcao, setModalConfirmarAcao] = useState<{
+    titulo: string; mensagem: string; labelConfirm: string; cor?: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Feedback
   const [modalFeedbackVisivel, setModalFeedbackVisivel] = useState(false);
@@ -133,10 +139,19 @@ export default function ConfiguracoesScreen() {
   };
 
   const deletarParceria = async (mensagem: string) => {
-    Alert.alert("Atenção", mensagem, [
-      { text: "Não", style: "cancel" },
-      { text: "Sim", style: "destructive", onPress: async () => { setLoadingParceria(true); await supabase.from("parcerias").delete().eq("id", parceria.id); setParceria(null); setLoadingParceria(false); } },
-    ]);
+    setModalConfirmarAcao({
+      titulo: "Atenção",
+      mensagem,
+      labelConfirm: "Sim, desvincular",
+      cor: "#E76F51",
+      onConfirm: async () => {
+        setModalConfirmarAcao(null);
+        setLoadingParceria(true);
+        await supabase.from("parcerias").delete().eq("id", parceria.id);
+        setParceria(null);
+        setLoadingParceria(false);
+      },
+    });
   };
 
   const handleBiometricToggle = async (novoValor: boolean) => {
@@ -152,10 +167,13 @@ export default function ConfiguracoesScreen() {
   };
 
   const handleLogout = async () => {
-    Alert.alert("Sair da Conta", "Tem certeza que deseja sair?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Sair", style: "destructive", onPress: async () => { await supabase.auth.signOut(); } },
-    ]);
+    setModalConfirmarAcao({
+      titulo: "Sair da Conta",
+      mensagem: "Tem certeza que deseja sair?",
+      labelConfirm: "Sair",
+      cor: "#E76F51",
+      onConfirm: async () => { setModalConfirmarAcao(null); await supabase.auth.signOut(); },
+    });
   };
 
   const salvarPerfil = async () => {
@@ -200,43 +218,39 @@ export default function ConfiguracoesScreen() {
   };
 
   const confirmarApagarConta = () => {
-    Alert.alert(
-      "Apagar Conta",
-      "⚠️ Esta ação é irreversível!\n\nTodos os seus dados serão permanentemente apagados.\n\nTem certeza absoluta?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Sim, apagar tudo",
-          style: "destructive",
-          onPress: async () => {
-            // Tenta autenticar via biometria antes de excluir
-            const temHardware = await LocalAuthentication.hasHardwareAsync();
-            const temBiometria = await LocalAuthentication.isEnrolledAsync();
+    setModalConfirmarAcao({
+      titulo: "Apagar Conta",
+      mensagem: "⚠️ Esta ação é irreversível!\n\nTodos os seus dados serão permanentemente apagados.\n\nTem certeza absoluta?",
+      labelConfirm: "Sim, apagar tudo",
+      cor: "#FF4444",
+      onConfirm: async () => {
+        setModalConfirmarAcao(null);
+        // Tenta autenticar via biometria antes de excluir
+        const temHardware = await LocalAuthentication.hasHardwareAsync();
+        const temBiometria = await LocalAuthentication.isEnrolledAsync();
 
-            if (temHardware && temBiometria) {
-              const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirme sua identidade para apagar a conta" });
-              if (!result.success) {
-                Alert.alert("Cancelado", "Autenticação necessária para apagar a conta.");
-                return;
-              }
-            } else {
-              // Sem biometria, confirmar por alerta adicional
-              Alert.alert(
-                "Confirmação Final",
-                "Confirme que deseja apagar permanentemente todos os seus dados.",
-                [
-                  { text: "Cancelar", style: "cancel" },
-                  { text: "Confirmar exclusão", style: "destructive", onPress: apagarContaCompleta },
-                ]
-              );
-              return;
-            }
+        if (temHardware && temBiometria) {
+          const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirme sua identidade para apagar a conta" });
+          if (!result.success) {
+            Alert.alert("Cancelado", "Autenticação necessária para apagar a conta.");
+            return;
+          }
+        } else {
+          // Sem biometria, confirmar por alerta adicional
+          Alert.alert(
+            "Confirmação Final",
+            "Confirme que deseja apagar permanentemente todos os seus dados.",
+            [
+              { text: "Cancelar", style: "cancel" },
+              { text: "Confirmar exclusão", style: "destructive", onPress: apagarContaCompleta },
+            ]
+          );
+          return;
+        }
 
-            await apagarContaCompleta();
-          },
-        },
-      ]
-    );
+        await apagarContaCompleta();
+      },
+    });
   };
 
   const apagarContaCompleta = async () => {
@@ -490,6 +504,34 @@ export default function ConfiguracoesScreen() {
             )}
           </View>
         </View>
+      )}
+
+      {/* MODAL CONFIRMAÇÃO */}
+      {modalConfirmarAcao && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalConfirmarAcao(null)}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ width: "100%", backgroundColor: Cores.card, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalConfirmarAcao.cor ?? "#2A9D8F" }}>
+              <Text style={{ color: Cores.texto, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>
+                {modalConfirmarAcao.titulo}
+              </Text>
+              <Text style={{ color: Cores.secundario, fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>
+                {modalConfirmarAcao.mensagem}
+              </Text>
+              <TouchableOpacity
+                style={{ backgroundColor: modalConfirmarAcao.cor ?? "#2A9D8F", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 10 }}
+                onPress={modalConfirmarAcao.onConfirm}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalConfirmarAcao.labelConfirm}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ backgroundColor: Cores.pillFundo, paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={() => setModalConfirmarAcao(null)}
+              >
+                <Text style={{ color: Cores.secundario, fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* MODAL DE EDIÇÃO DE PERFIL */}

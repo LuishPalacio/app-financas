@@ -122,11 +122,22 @@ export default function RelatoriosScreen() {
     };
   });
 
+  const getBalanceAtEndOfMonth = (yyyymm: string): number => {
+    const laterRec = transacoesFiltradas
+      .filter(t => t.tipo === "receita" && t.status === "paga" && (t.data_vencimento || "") > yyyymm + "-31")
+      .reduce((a, t) => a + Number(t.valor), 0);
+    const laterDesp = transacoesFiltradas
+      .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.data_vencimento || "") > yyyymm + "-31")
+      .reduce((a, t) => a + Number(t.valor), 0);
+    return saldoAtualGlobal + laterDesp - laterRec;
+  };
+
   // Balance line: projecao from start of year (or current month for current year)
   interface MesProj {
     mesIdx: number;
     saldo: number;
     isFuture: boolean;
+    isPast?: boolean;
   }
 
   const projecaoSaldo: MesProj[] = [];
@@ -141,13 +152,22 @@ export default function RelatoriosScreen() {
 
   for (let m = 0; m <= 11; m++) {
     const mes = todosOsMeses[m];
-    if (isAnoAtual && m < mesAtualIdx) {
-      // Past months of current year — saldo not tracked per-month, skip balance line
-      continue;
-    }
-    if (isAnoAtual && m === mesAtualIdx) {
-      projecaoSaldo.push({ mesIdx: m, saldo: saldoAtualGlobal, isFuture: false });
-      saldoAcc = saldoAtualGlobal + mes.recPendentes - mes.despPendentes;
+    const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
+    if (!isAnoAtual) {
+      saldoAcc += mes.recPagas + mes.recPendentes - mes.despPagas - mes.despPendentes;
+      projecaoSaldo.push({ mesIdx: m, saldo: saldoAcc, isFuture: true });
+    } else if (m < mesAtualIdx) {
+      projecaoSaldo.push({ mesIdx: m, saldo: getBalanceAtEndOfMonth(yyyymm), isFuture: false, isPast: true });
+    } else if (m === mesAtualIdx) {
+      const hasPending = mes.recPendentes > 0 || mes.despPendentes > 0;
+      if (hasPending) {
+        const saldoPrevisto = saldoAtualGlobal + mes.recPendentes - mes.despPendentes;
+        projecaoSaldo.push({ mesIdx: m, saldo: saldoPrevisto, isFuture: true });
+        saldoAcc = saldoPrevisto;
+      } else {
+        projecaoSaldo.push({ mesIdx: m, saldo: saldoAtualGlobal, isFuture: false });
+        saldoAcc = saldoAtualGlobal;
+      }
     } else {
       saldoAcc += mes.recPagas + mes.recPendentes - mes.despPagas - mes.despPendentes;
       projecaoSaldo.push({ mesIdx: m, saldo: saldoAcc, isFuture: true });
@@ -504,11 +524,11 @@ export default function RelatoriosScreen() {
                 <>
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
                   <DetalheRow
-                    label={saldoDetalhe.isFuture ? "Saldo previsto" : "Saldo atual"}
+                    label={saldoDetalhe.isFuture ? "Saldo previsto" : saldoDetalhe.isPast ? "Saldo no mês" : "Saldo atual"}
                     valor={`R$ ${saldoDetalhe.saldo.toFixed(2)}`}
                     cor={saldoDetalhe.saldo >= 0 ? "#2A9D8F" : "#E76F51"}
                     isIcon
-                    iconName={saldoDetalhe.isFuture ? "trending-up" : "account-balance-wallet"}
+                    iconName={saldoDetalhe.isFuture ? "trending-up" : saldoDetalhe.isPast ? "history" : "account-balance-wallet"}
                     cores={Cores}
                     bold
                   />
