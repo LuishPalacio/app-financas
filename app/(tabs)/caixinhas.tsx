@@ -98,6 +98,7 @@ export default function CaixinhasScreen() {
   const [metaEditCaixa, setMetaEditCaixa] = useState("");
   const [corEditCaixa, setCorEditCaixa] = useState(PALETA_CORES[0]);
   const [iconeEditCaixa, setIconeEditCaixa] = useState("savings");
+  const [compartilhadoEditCaixa, setCompartilhadoEditCaixa] = useState(false);
 
   // Modal movimento
   const [modalMovimentoVisivel, setModalMovimentoVisivel] = useState(false);
@@ -184,6 +185,7 @@ export default function CaixinhasScreen() {
     setMetaEditCaixa(String(caixa.meta_valor));
     setCorEditCaixa(caixa.cor);
     setIconeEditCaixa(caixa.icone);
+    setCompartilhadoEditCaixa(caixa.compartilhado ?? false);
     setCaixaOpcoes(caixa);
     setModalEditarVisivel(true);
   };
@@ -196,6 +198,7 @@ export default function CaixinhasScreen() {
 
     const { error } = await supabase.from("caixinhas").update({
       nome: nomeEditCaixa, meta_valor: valorNum, cor: corEditCaixa, icone: iconeEditCaixa,
+      compartilhado: compartilhadoEditCaixa,
     }).eq("id", caixaOpcoes.id);
 
     if (error) Alert.alert("Erro", "Não foi possível salvar.");
@@ -463,6 +466,19 @@ export default function CaixinhasScreen() {
                 onChangeText={setMetaEditCaixa}
                 keyboardType="numeric"
               />
+              {temParceiro && (
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: 12, backgroundColor: Cores.pillFundo, borderRadius: 10 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
+                    <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Objetivo Conjunto?</Text>
+                  </View>
+                  <Switch
+                    value={compartilhadoEditCaixa}
+                    onValueChange={setCompartilhadoEditCaixa}
+                    trackColor={{ false: "#767577", true: "#E76F51" }}
+                  />
+                </View>
+              )}
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
               <View style={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (

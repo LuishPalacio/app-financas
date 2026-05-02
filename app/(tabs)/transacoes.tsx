@@ -229,9 +229,15 @@ export default function TransacoesScreen() {
     }
   };
 
+  const isRecorrente = (t: Transacao) =>
+    t.descricao.endsWith("(Fixa)") || /\(\d+\/\d+\)$/.test(t.descricao);
+
+  const descricaoBase = (desc: string) =>
+    desc.replace(/\s*\(\d+\/\d+\)$/, "").replace(/\s*\(Fixa\)$/, "").trim();
+
   const abrirEditarTransacao = (t: Transacao) => {
     setTransacaoEditando(t);
-    setEditDescricao(t.descricao);
+    setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : t.descricao);
     setEditValor(String(t.valor));
     const partes = (t.data_vencimento || new Date().toISOString().split("T")[0]).split("-");
     setEditData(new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2])));
@@ -240,12 +246,6 @@ export default function TransacoesScreen() {
     setEditContaId(t.conta_id);
     setModalEditarTransVisivel(true);
   };
-
-  const isRecorrente = (t: Transacao) =>
-    t.descricao.endsWith("(Fixa)") || /\(\d+\/\d+\)$/.test(t.descricao);
-
-  const descricaoBase = (desc: string) =>
-    desc.replace(/\s*\(\d+\/\d+\)$/, "").replace(/\s*\(Fixa\)$/, "").trim();
 
   const executarEdicao = async (apenasEsta: boolean) => {
     if (!transacaoEditando) return;
@@ -267,20 +267,22 @@ export default function TransacoesScreen() {
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
       const itens = (serie ?? []).filter((t) => descricaoBase(t.descricao) === base);
-      for (const item of itens) {
-        const partes = (item.data_vencimento || dataFormatada).split("-");
-        const ano = parseInt(partes[0]);
-        const mes = parseInt(partes[1]) - 1;
-        const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-        const diaFinal = Math.min(novoDia, diasNoMes);
-        const novaData = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
-        const sufixo = item.descricao.slice(descricaoBase(item.descricao).length);
-        const novaDescricao = novoBase + sufixo;
-        const { error } = await supabase.from("transacoes").update({
-          ...campos, descricao: novaDescricao, data_vencimento: novaData,
-        }).eq("id", item.id);
-        if (error) return Alert.alert("Erro", "Não foi possível atualizar a série.");
-      }
+      const resultados = await Promise.all(
+        itens.map((item) => {
+          const partes = (item.data_vencimento || dataFormatada).split("-");
+          const ano = parseInt(partes[0]);
+          const mes = parseInt(partes[1]) - 1;
+          const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+          const diaFinal = Math.min(novoDia, diasNoMes);
+          const novaData = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
+          const sufixo = item.descricao.slice(descricaoBase(item.descricao).length);
+          const novaDescricao = novoBase + sufixo;
+          return supabase.from("transacoes").update({
+            ...campos, descricao: novaDescricao, data_vencimento: novaData,
+          }).eq("id", item.id);
+        })
+      );
+      if (resultados.some((r) => r.error)) return Alert.alert("Erro", "Não foi possível atualizar a série.");
     }
 
     setModalEditarTransVisivel(false);

@@ -20,7 +20,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.luishpalacio.meuappfinancas",
-      "permissions": ["INTERNET", "RECEIVE_BOOT_COMPLETED", "SCHEDULE_EXACT_ALARM", "USE_EXACT_ALARM"]
+      "permissions": ["INTERNET", "RECEIVE_BOOT_COMPLETED"]
     },
     "web": {
       "bundler": "metro",

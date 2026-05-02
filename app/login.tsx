@@ -95,9 +95,14 @@ export default function LoginScreen() {
           "3 tentativas incorretas. Aguarde 30 segundos.",
         );
       } else {
+        const mensagemErro =
+          error.message.includes("Invalid login credentials") ||
+          error.message.includes("invalid_credentials")
+            ? "E-mail ou senha incorretos."
+            : "Não foi possível entrar. Verifique suas credenciais.";
         Alert.alert(
           "Erro ao entrar",
-          `${error.message} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`,
+          `${mensagemErro} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`,
         );
       }
     } else {
