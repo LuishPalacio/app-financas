@@ -262,9 +262,15 @@ export default function ConfiguracoesScreen() {
       await supabase.from("contas").delete().eq("user_id", meuId);
       await supabase.from("categorias").delete().eq("user_id", meuId);
       await supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`);
-      await supabase.rpc("delete_user");
+
+      const { error: erroDeletar } = await supabase.rpc("delete_user");
+      if (erroDeletar) {
+        Alert.alert("Erro", "Não foi possível remover o login. Tente novamente ou contate o suporte.");
+        return;
+      }
+
       await supabase.auth.signOut();
-      Alert.alert("Conta apagada", "Seus dados foram removidos com sucesso.");
+      Alert.alert("Conta apagada", "Sua conta e todos os dados foram removidos com sucesso.");
     } catch (error) {
       Alert.alert("Erro", "Não foi possível apagar todos os dados. Tente novamente.");
     }
