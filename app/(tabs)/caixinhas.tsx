@@ -1,10 +1,12 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
   Button,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -15,6 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
+import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { useAppTheme } from "../_layout";
 
 interface Caixinha {
@@ -25,7 +28,33 @@ interface Caixinha {
   cor: string;
   icone: string;
   compartilhado?: boolean;
+  data_prazo?: string | null;
 }
+
+const formatarReais = (valor: number): string => {
+  const cents = Math.round((valor % 1) * 100);
+  if (cents === 0) {
+    return `R$ ${Math.floor(valor).toLocaleString("pt-BR")}`;
+  }
+  return `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const diasAteData = (dataStr: string): number => {
+  const p = dataStr.split("-");
+  const alvo = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+  alvo.setHours(0, 0, 0, 0);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return Math.round((alvo.getTime() - hoje.getTime()) / 86400000);
+};
+
+const corPrazo = (dias: number): string => {
+  if (dias < 0) return "#CC092F";
+  if (dias <= 3) return "#E76F51";
+  if (dias <= 7) return "#F4A261";
+  if (dias <= 30) return "#E9C46A";
+  return "#8AB17D";
+};
 
 interface Conta {
   id: number;
@@ -87,6 +116,8 @@ export default function CaixinhasScreen() {
   const [corSelecionada, setCorSelecionada] = useState(PALETA_CORES[0]);
   const [iconeSelecionado, setIconeSelecionado] = useState("savings");
   const [caixinhaCompartilhada, setCaixinhaCompartilhada] = useState(false);
+  const [dataPrazoCriacao, setDataPrazoCriacao] = useState<Date | null>(null);
+  const [mostrarPickerCriacao, setMostrarPickerCriacao] = useState(false);
 
   // Modal opções (click no card)
   const [modalOpcoesVisivel, setModalOpcoesVisivel] = useState(false);
@@ -99,6 +130,8 @@ export default function CaixinhasScreen() {
   const [corEditCaixa, setCorEditCaixa] = useState(PALETA_CORES[0]);
   const [iconeEditCaixa, setIconeEditCaixa] = useState("savings");
   const [compartilhadoEditCaixa, setCompartilhadoEditCaixa] = useState(false);
+  const [dataPrazoEdit, setDataPrazoEdit] = useState<Date | null>(null);
+  const [mostrarPickerEdit, setMostrarPickerEdit] = useState(false);
 
   // Modais de aviso e confirmação de deleção
   const [modalAvisoCaixinha, setModalAvisoCaixinha] = useState<{ titulo: string; mensagem: string } | null>(null);
@@ -141,6 +174,15 @@ export default function CaixinhasScreen() {
           if (nomeData) setParceiraNome(nomeData);
         }
       }
+      // Agenda notificações de prazo dos objetivos
+      if (resCaixinhas.data) {
+        agendarNotificacoesDoApp([], session.user.id, resCaixinhas.data.map((c: any) => ({
+          nome: c.nome,
+          meta_valor: Number(c.meta_valor),
+          saldo_atual: Number(c.saldo_atual),
+          data_prazo: c.data_prazo ?? undefined,
+        })));
+      }
     } catch (error) {
       console.error(error);
     }
@@ -164,16 +206,20 @@ export default function CaixinhasScreen() {
     if (saldoInicial > valorNum)
       return Alert.alert("Aviso", "O saldo inicial não pode ser maior que a meta.");
 
+    const prazoStr = dataPrazoCriacao
+      ? `${dataPrazoCriacao.getFullYear()}-${String(dataPrazoCriacao.getMonth() + 1).padStart(2, "0")}-${String(dataPrazoCriacao.getDate()).padStart(2, "0")}`
+      : null;
+
     const { error } = await supabase.from("caixinhas").insert([{
       nome: nomeCaixinha, meta_valor: valorNum, saldo_atual: saldoInicial,
       cor: corSelecionada, icone: iconeSelecionado, user_id: session.user.id,
-      compartilhado: caixinhaCompartilhada,
+      compartilhado: caixinhaCompartilhada, data_prazo: prazoStr,
     }]);
 
     if (error) { Alert.alert("Erro", "Não foi possível criar a caixinha."); }
     else {
       setNomeCaixinha(""); setMetaValor(""); setSaldoInicialCaixinha("");
-      setIconeSelecionado("savings"); setCaixinhaCompartilhada(false);
+      setIconeSelecionado("savings"); setCaixinhaCompartilhada(false); setDataPrazoCriacao(null);
       setModalNovaVisivel(false); carregarDados();
     }
   };
@@ -190,6 +236,12 @@ export default function CaixinhasScreen() {
     setCorEditCaixa(caixa.cor);
     setIconeEditCaixa(caixa.icone);
     setCompartilhadoEditCaixa(caixa.compartilhado ?? false);
+    if (caixa.data_prazo) {
+      const p = caixa.data_prazo.split("-");
+      setDataPrazoEdit(new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2])));
+    } else {
+      setDataPrazoEdit(null);
+    }
     setCaixaOpcoes(caixa);
     setModalEditarVisivel(true);
   };
@@ -200,9 +252,13 @@ export default function CaixinhasScreen() {
     if (nomeEditCaixa.trim() === "" || isNaN(valorNum) || valorNum <= 0)
       return Alert.alert("Aviso", "Nome e meta são obrigatórios.");
 
+    const prazoStr = dataPrazoEdit
+      ? `${dataPrazoEdit.getFullYear()}-${String(dataPrazoEdit.getMonth() + 1).padStart(2, "0")}-${String(dataPrazoEdit.getDate()).padStart(2, "0")}`
+      : null;
+
     const { error } = await supabase.from("caixinhas").update({
       nome: nomeEditCaixa, meta_valor: valorNum, cor: corEditCaixa, icone: iconeEditCaixa,
-      compartilhado: compartilhadoEditCaixa,
+      compartilhado: compartilhadoEditCaixa, data_prazo: prazoStr,
     }).eq("id", caixaOpcoes.id);
 
     if (error) Alert.alert("Erro", "Não foi possível salvar.");
@@ -379,16 +435,28 @@ export default function CaixinhasScreen() {
 
                 <View style={styles.valuesRow}>
                   <Text style={[styles.currentValue, { color: Cores.textoPrincipal }]}>
-                    R$ {Number(caixa.saldo_atual).toFixed(2)}
+                    {formatarReais(Number(caixa.saldo_atual))}
                   </Text>
                   <Text style={[styles.targetValue, { color: Cores.textoSecundario }]}>
-                    de R$ {Number(caixa.meta_valor).toFixed(2)}
+                    de {formatarReais(Number(caixa.meta_valor))}
                   </Text>
                 </View>
 
                 <View style={[styles.progressBarBackground, { backgroundColor: Cores.barraFundo }]}>
                   <View style={[styles.progressBarFill, { backgroundColor: isCompleto ? "#2A9D8F" : caixa.cor, width: `${porcentagem}%` }]} />
                 </View>
+
+                {caixa.data_prazo && !isCompleto && (() => {
+                  const dias = diasAteData(caixa.data_prazo);
+                  const cor = corPrazo(dias);
+                  const label = dias < 0 ? "Prazo vencido" : dias === 0 ? "Prazo hoje!" : `${dias} dia${dias === 1 ? "" : "s"} restantes`;
+                  return (
+                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                      <MaterialIcons name="event" size={12} color={cor} style={{ marginRight: 4 }} />
+                      <Text style={{ color: cor, fontSize: 11, fontWeight: "600" }}>{label}</Text>
+                    </View>
+                  );
+                })()}
               </TouchableOpacity>
             );
           })
@@ -515,6 +583,38 @@ export default function CaixinhasScreen() {
                 onChangeText={setMetaEditCaixa}
                 keyboardType="numeric"
               />
+
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Data prazo (opcional):</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: dataPrazoEdit ? "#2A9D8F" : Cores.borda, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                onPress={() => setMostrarPickerEdit(true)}
+              >
+                <Text style={{ color: dataPrazoEdit ? Cores.textoPrincipal : Cores.textoSecundario, fontSize: 15 }}>
+                  {dataPrazoEdit
+                    ? `${String(dataPrazoEdit.getDate()).padStart(2, "0")}/${String(dataPrazoEdit.getMonth() + 1).padStart(2, "0")}/${dataPrazoEdit.getFullYear()}`
+                    : "Sem prazo definido"}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {dataPrazoEdit && (
+                    <TouchableOpacity onPress={(e) => { e.stopPropagation(); setDataPrazoEdit(null); }}>
+                      <MaterialIcons name="close" size={18} color={Cores.textoSecundario} />
+                    </TouchableOpacity>
+                  )}
+                  <MaterialIcons name="event" size={18} color="#2A9D8F" />
+                </View>
+              </TouchableOpacity>
+              {mostrarPickerEdit && (
+                <DateTimePicker
+                  value={dataPrazoEdit ?? new Date()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(_e: any, date?: Date) => {
+                    setMostrarPickerEdit(false);
+                    if (date) setDataPrazoEdit(date);
+                  }}
+                />
+              )}
+
               {temParceiro && (
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: 12, backgroundColor: Cores.pillFundo, borderRadius: 10 }}>
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -603,6 +703,39 @@ export default function CaixinhasScreen() {
                 onChangeText={setSaldoInicialCaixinha}
                 keyboardType="numeric"
               />
+
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Data prazo (opcional):</Text>
+              <TouchableOpacity
+                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: dataPrazoCriacao ? "#2A9D8F" : Cores.borda, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+                onPress={() => setMostrarPickerCriacao(true)}
+              >
+                <Text style={{ color: dataPrazoCriacao ? Cores.textoPrincipal : Cores.textoSecundario, fontSize: 15 }}>
+                  {dataPrazoCriacao
+                    ? `${String(dataPrazoCriacao.getDate()).padStart(2, "0")}/${String(dataPrazoCriacao.getMonth() + 1).padStart(2, "0")}/${dataPrazoCriacao.getFullYear()}`
+                    : "Sem prazo definido"}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {dataPrazoCriacao && (
+                    <TouchableOpacity onPress={(e) => { e.stopPropagation(); setDataPrazoCriacao(null); }}>
+                      <MaterialIcons name="close" size={18} color={Cores.textoSecundario} />
+                    </TouchableOpacity>
+                  )}
+                  <MaterialIcons name="event" size={18} color="#2A9D8F" />
+                </View>
+              </TouchableOpacity>
+              {mostrarPickerCriacao && (
+                <DateTimePicker
+                  value={dataPrazoCriacao ?? new Date()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  minimumDate={new Date()}
+                  onChange={(_e: any, date?: Date) => {
+                    setMostrarPickerCriacao(false);
+                    if (date) setDataPrazoCriacao(date);
+                  }}
+                />
+              )}
+
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
               <View style={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (

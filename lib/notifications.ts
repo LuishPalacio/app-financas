@@ -12,6 +12,16 @@ try {
       shouldSetBadge: false,
     }),
   });
+  // Canal Android obrigatório para exibir notificações no Android 8+
+  if (Platform.OS === "android") {
+    Notif.setNotificationChannelAsync("finflow", {
+      name: "FinFlow",
+      importance: Notif.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: "default",
+      enableVibrate: true,
+    });
+  }
 } catch {
   // expo-notifications não disponível — modo silencioso
 }
@@ -48,14 +58,19 @@ export async function notificacoesEstaoAtivasPara(userId: string): Promise<boole
 
 export async function agendarNotificacoesDoApp(
   transacoes: { status: string; data_vencimento: string; tipo: string }[],
-  userId: string
+  userId: string,
+  caixinhas?: { nome: string; meta_valor: number; saldo_atual: number; data_prazo?: string }[]
 ) {
   if (!Notif || Platform.OS === "web") return;
   try {
     const ativas = await notificacoesEstaoAtivasPara(userId);
     if (!ativas) return;
 
-    await Notif.cancelAllScheduledNotificationsAsync();
+    // Só cancela tudo se há transações para reagendar; caso contrário apenas
+    // adiciona as notificações de caixinha sem apagar as de transações
+    if (transacoes.length > 0) {
+      await Notif.cancelAllScheduledNotificationsAsync();
+    }
 
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
@@ -78,14 +93,17 @@ export async function agendarNotificacoesDoApp(
 
     const agora = new Date();
 
+    const channelId = Platform.OS === "android" ? "finflow" : undefined;
+
     // Notificação imediata de vencidos (3s após app abrir)
     if (vencidas.length > 0) {
       await Notif.scheduleNotificationAsync({
         content: {
           title: "🔴 FinFlow — Lançamentos Vencidos",
           body: `Você tem ${vencidas.length} lançamento${vencidas.length > 1 ? "s" : ""} vencido${vencidas.length > 1 ? "s" : ""}. Regularize agora!`,
+          ...(channelId ? { android: { channelId } } : {}),
         },
-        trigger: { seconds: 3 },
+        trigger: { type: "timeInterval", seconds: 3, repeats: false } as any,
       });
     }
 
@@ -103,8 +121,8 @@ export async function agendarNotificacoesDoApp(
       if (hora8 > agora) {
         const seg8 = Math.floor((hora8.getTime() - agora.getTime()) / 1000);
         await Notif.scheduleNotificationAsync({
-          content: { title: "📅 FinFlow — Vencimento Hoje", body: corpo },
-          trigger: { seconds: seg8 },
+          content: { title: "📅 FinFlow — Vencimento Hoje", body: corpo, ...(channelId ? { android: { channelId } } : {}) },
+          trigger: { type: "timeInterval", seconds: seg8, repeats: false } as any,
         });
       }
 
@@ -113,8 +131,8 @@ export async function agendarNotificacoesDoApp(
       if (hora19 > agora) {
         const seg19 = Math.floor((hora19.getTime() - agora.getTime()) / 1000);
         await Notif.scheduleNotificationAsync({
-          content: { title: "⏰ FinFlow — Lembrete de Hoje", body: corpo },
-          trigger: { seconds: seg19 },
+          content: { title: "⏰ FinFlow — Lembrete de Hoje", body: corpo, ...(channelId ? { android: { channelId } } : {}) },
+          trigger: { type: "timeInterval", seconds: seg19, repeats: false } as any,
         });
       }
     }
@@ -140,9 +158,38 @@ export async function agendarNotificacoesDoApp(
         content: {
           title: "📊 FinFlow — Revisão Diária",
           body: mensagensNoon[idx],
+          ...(channelId ? { android: { channelId } } : {}),
         },
-        trigger: { seconds: segundos },
+        trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
       });
+    }
+    // Notificações de prazo das caixinhas
+    if (caixinhas && caixinhas.length > 0) {
+      const MARCOS_DIAS = [30, 7, 3, 1, 0];
+      for (const caixa of caixinhas) {
+        if (!caixa.data_prazo) continue;
+        const isCompleto = Number(caixa.saldo_atual) >= Number(caixa.meta_valor);
+        if (isCompleto) continue;
+        const p = caixa.data_prazo.split("-");
+        const prazo = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+        prazo.setHours(9, 0, 0, 0);
+        for (const marcosDias of MARCOS_DIAS) {
+          const alvo = new Date(prazo);
+          alvo.setDate(alvo.getDate() - marcosDias);
+          if (alvo <= agora) continue;
+          const segundos = Math.floor((alvo.getTime() - agora.getTime()) / 1000);
+          const titulo = marcosDias === 0 ? "⏰ Prazo de objetivo hoje!" : `📌 Objetivo vence em ${marcosDias} dia${marcosDias > 1 ? "s" : ""}`;
+          const falta = Number(caixa.meta_valor) - Number(caixa.saldo_atual);
+          await Notif.scheduleNotificationAsync({
+            content: {
+              title: titulo,
+              body: `"${caixa.nome}" — faltam R$ ${falta.toFixed(2)} para atingir a meta.`,
+              ...(channelId ? { android: { channelId } } : {}),
+            },
+            trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+          });
+        }
+      }
     }
   } catch (e) {
     console.log("Erro ao agendar notificações:", e);

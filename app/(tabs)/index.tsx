@@ -37,6 +37,14 @@ interface Conta {
   cor?: string;
   arquivado?: boolean;
 }
+interface Caixinha {
+  id: number;
+  nome: string;
+  saldo_atual: number;
+  meta_valor: number;
+  cor: string;
+  icone: string;
+}
 interface Transacao {
   id: number;
   tipo: string;
@@ -159,6 +167,7 @@ export default function Dashboard() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
+  const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
 
   const [mesAtual, setMesAtual] = useState(new Date());
@@ -211,6 +220,7 @@ export default function Dashboard() {
   const [catSelecionadaId, setCatSelecionadaId] = useState<number | null>(null);
   const [contaSelecionadaId, setContaSelecionadaId] = useState<number | null>(null);
   const [contaDestinoId, setContaDestinoId] = useState<number | null>(null);
+  const [caixinhaDestinoId, setCaixinhaDestinoId] = useState<number | null>(null);
   const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">("unica");
   const [numParcelas, setNumParcelas] = useState("2");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
@@ -314,13 +324,14 @@ export default function Dashboard() {
     if (!session?.user?.id) return;
 
     try {
-      const [resCategorias, resContas, resTransacoes, resParceria] = await Promise.all([
+      const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
         supabase.from("transacoes").select("*"),    // RLS retorna próprias + de contas compartilhadas
         supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
+        supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, cor, icone"),
       ]);
 
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
@@ -328,6 +339,7 @@ export default function Dashboard() {
       if (resCategorias.data) setCategorias(resCategorias.data);
       if (resContas.data) setContas(resContas.data);
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
+      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
 
       const temParc = resParceria.data ? resParceria.data.length > 0 : false;
       setTemParceiro(temParc);
@@ -597,13 +609,13 @@ export default function Dashboard() {
     if (frequencia === "parcelada") {
       totalRepeticoes = parseInt(numParcelas);
       if (isNaN(totalRepeticoes) || totalRepeticoes < 2) return Alert.alert("Aviso", "Número de parcelas inválido.");
-      valorFinal = valorNum / totalRepeticoes;
+      // valorNum já é o valor de cada parcela — não dividir
     } else if (frequencia === "fixa") {
       totalRepeticoes = 60; // 5 anos — contínua até o usuário deletar a série
     }
 
     const statusBd = foiPago ? "paga" : "pendente";
-    const novasTransacoes = [];
+    const novasTransacoes: any[] = [];
 
     for (let i = 0; i < totalRepeticoes; i++) {
       const dataIteracao = new Date(dataSelecionada.getFullYear(), dataSelecionada.getMonth() + i, dataSelecionada.getDate());
@@ -613,10 +625,17 @@ export default function Dashboard() {
       if (frequencia === "fixa") descFinal = `${descTransacao} (Fixa)`;
 
       if (tipoTransacao === "transferencia") {
-        if (!contaSelecionadaId || !contaDestinoId) return Alert.alert("Aviso", "Seleciona a origem e destino.");
-        if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
-        novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
-        novasTransacoes.push({ tipo: "receita", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaDestinoId, user_id: session.user.id });
+        if (!contaSelecionadaId || (!contaDestinoId && !caixinhaDestinoId)) return Alert.alert("Aviso", "Seleciona a origem e destino.");
+        if (caixinhaDestinoId) {
+          // Transferência para objetivo: cria despesa com descrição "Guardar em: X"
+          const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
+          if (!caixa) return Alert.alert("Aviso", "Objetivo não encontrado.");
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+        } else {
+          if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "receita", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaDestinoId, user_id: session.user.id });
+        }
       } else {
         if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
         novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
@@ -625,11 +644,19 @@ export default function Dashboard() {
 
     setLoadingTrans(true);
     const { error } = await supabase.from("transacoes").insert(novasTransacoes);
+    if (!error && caixinhaDestinoId && statusBd === "paga") {
+      // Atualiza saldo do objetivo para transações já pagas
+      const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
+      if (caixa) {
+        const totalPago = novasTransacoes.filter(t => t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+        await supabase.from("caixinhas").update({ saldo_atual: Number(caixa.saldo_atual) + totalPago }).eq("id", caixa.id);
+      }
+    }
     setLoadingTrans(false);
     if (error) return Alert.alert("Erro", "Falha ao guardar os registos na nuvem.");
 
     setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
-    setContaSelecionadaId(null); setContaDestinoId(null); setFrequencia("unica");
+    setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
     setNumParcelas("2"); setDataSelecionada(new Date()); setFoiPago(true);
     setModalTransVisivel(false);
     carregarDados();
@@ -1365,11 +1392,16 @@ export default function Dashboard() {
                   <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
                 </TouchableOpacity>
                 {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
-                <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]} placeholder={frequencia === "parcelada" ? "Valor Total" : "Valor (Ex: 50)"} placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="numeric" />
+                <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]} placeholder={frequencia === "parcelada" ? "Valor da Parcela" : "Valor (Ex: 50)"} placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="numeric" />
                 {frequencia === "parcelada" && (
                   <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, width: 80 }]} placeholder="Vezes" placeholderTextColor={Cores.textoSecundario} value={numParcelas} onChangeText={setNumParcelas} keyboardType="numeric" />
                 )}
               </View>
+              {frequencia === "parcelada" && valorTransacao && numParcelas && !isNaN(parseFloat(valorTransacao)) && !isNaN(parseInt(numParcelas)) && (
+                <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: -10, marginBottom: 10, textAlign: "right" }}>
+                  Total: R$ {(parseFloat(valorTransacao.replace(",", ".")) * parseInt(numParcelas)).toFixed(2)}
+                </Text>
+              )}
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de Origem (Sai):" : "Qual Conta?"}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
@@ -1385,10 +1417,18 @@ export default function Dashboard() {
                 <>
                   <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Conta de Destino (Entra):</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-                    {contas.map((conta) => (
-                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, contaDestinoId === conta.id && { borderColor: "#2A9D8F", borderWidth: 2 }]} onPress={() => setContaDestinoId(conta.id)}>
-                        <MaterialIcons name="account-balance-wallet" size={16} color={contaDestinoId === conta.id ? "#2A9D8F" : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                    {contas.filter(c => !c.arquivado).map((conta) => (
+                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, !caixinhaDestinoId && contaDestinoId === conta.id && { borderColor: "#2A9D8F", borderWidth: 2 }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
+                        <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? "#2A9D8F" : Cores.textoSecundario} style={{ marginRight: 6 }} />
                         <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {caixinhas.map((caixa) => (
+                      <TouchableOpacity key={`caixa-dest-${caixa.id}`} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, caixinhaDestinoId === caixa.id && { borderColor: caixa.cor, borderWidth: 2 }]} onPress={() => { setCaixinhaDestinoId(caixa.id); setContaDestinoId(null); }}>
+                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: caixa.cor, alignItems: "center", justifyContent: "center", marginRight: 6 }}>
+                          <MaterialIcons name={caixa.icone as any} size={11} color="#FFF" />
+                        </View>
+                        <Text style={{ color: Cores.textoPrincipal }}>{caixa.nome}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>

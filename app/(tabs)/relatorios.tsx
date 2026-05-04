@@ -523,8 +523,19 @@ export default function RelatoriosScreen() {
               {saldoDetalhe && (
                 <>
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
+                  {mesDetalhe.isAtual && saldoDetalhe.isFuture && (
+                    <DetalheRow
+                      label="Saldo atual"
+                      valor={`R$ ${saldoAtualGlobal.toFixed(2)}`}
+                      cor={saldoAtualGlobal >= 0 ? "#2A9D8F" : "#E76F51"}
+                      isIcon
+                      iconName="account-balance-wallet"
+                      cores={Cores}
+                      bold
+                    />
+                  )}
                   <DetalheRow
-                    label={saldoDetalhe.isFuture ? "Saldo previsto" : saldoDetalhe.isPast ? "Saldo no mês" : "Saldo atual"}
+                    label={saldoDetalhe.isFuture ? (mesDetalhe.isAtual ? "Saldo previsto" : "Saldo projetado") : saldoDetalhe.isPast ? "Saldo no mês" : "Saldo atual"}
                     valor={`R$ ${saldoDetalhe.saldo.toFixed(2)}`}
                     cor={saldoDetalhe.saldo >= 0 ? "#2A9D8F" : "#E76F51"}
                     isIcon

@@ -89,6 +89,7 @@ export default function TransacoesScreen() {
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<"todas" | "receita" | "despesa" | "transferencia">("todas");
   const [filtroVencidas, setFiltroVencidas] = useState(false);
+  const [busca, setBusca] = useState("");
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 30;
 
@@ -335,12 +336,15 @@ export default function TransacoesScreen() {
 
   const hojeRef = new Date(); hojeRef.setHours(0, 0, 0, 0);
 
+  const termoBusca = busca.trim().toLowerCase();
+
   const transacoesDoMes = transacoes
     .filter((t) => {
+      const passaBusca = !termoBusca || (t.descricao || "").toLowerCase().includes(termoBusca);
       if (filtroVencidas) {
         const p = (t.data_vencimento || "0000-00-00").split("-");
         const d = new Date(+p[0], +p[1] - 1, +p[2]);
-        return t.status === "pendente" && d < hojeRef;
+        return t.status === "pendente" && d < hojeRef && passaBusca;
       }
       const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
       const dataSegura = t.data_vencimento || new Date().toISOString().split("T")[0];
@@ -355,7 +359,7 @@ export default function TransacoesScreen() {
       else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !isTransferencia;
       else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !isTransferencia;
       // "todas" = passaTipo permanece true → exibe receitas, despesas e transferências
-      return passaConta && passaCategoria && passaMes && passaTipo;
+      return passaConta && passaCategoria && passaMes && passaTipo && passaBusca;
     })
     .sort((a, b) => (b.data_vencimento || "").localeCompare(a.data_vencimento || ""));
 
@@ -378,7 +382,7 @@ export default function TransacoesScreen() {
   });
   const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas;
   const limparFiltros = () => {
-    setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setPaginaAtual(1);
+    setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setBusca(""); setPaginaAtual(1);
   };
 
   return (
@@ -386,10 +390,24 @@ export default function TransacoesScreen() {
       {/* CABEÇALHO */}
       <View style={[styles.header, { backgroundColor: Cores.fundo }]}>
         <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Extrato</Text>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", marginLeft: 10 }}>
+          <TextInput
+            value={busca}
+            onChangeText={(t) => { setBusca(t); setPaginaAtual(1); }}
+            placeholder="Buscar..."
+            placeholderTextColor={Cores.textoSecundario}
+            style={{ flex: 1, backgroundColor: Cores.pillFundo, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, color: Cores.textoPrincipal, fontSize: 13 }}
+          />
+          {busca.length > 0 && (
+            <TouchableOpacity onPress={() => setBusca("")} style={{ padding: 4, marginLeft: 4 }}>
+              <MaterialIcons name="close" size={16} color={Cores.textoSecundario} />
+            </TouchableOpacity>
+          )}
+        </View>
         {temVencidas && (
           <TouchableOpacity
             onPress={() => { setFiltroVencidas(!filtroVencidas); setPaginaAtual(1); }}
-            style={{ padding: 6, borderRadius: 20, backgroundColor: filtroVencidas ? "#E76F5133" : "transparent" }}
+            style={{ padding: 6, marginLeft: 4, borderRadius: 20, backgroundColor: filtroVencidas ? "#E76F5133" : "transparent" }}
           >
             <MaterialIcons name={filtroVencidas ? "close" : "warning"} size={24} color="#E76F51" />
           </TouchableOpacity>
