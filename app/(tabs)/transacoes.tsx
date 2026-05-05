@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
+import { fmtReais } from "../../lib/utils";
 
 interface Categoria {
   id: number;
@@ -483,18 +484,18 @@ export default function TransacoesScreen() {
       <View style={[styles.resumoBar, { backgroundColor: Cores.cardFundo, borderBottomColor: Cores.borda }]}>
         <View style={styles.resumoItem}>
           <MaterialIcons name="arrow-upward" size={14} color="#2A9D8F" />
-          <Text style={styles.resumoReceita}>R$ {totalReceitas.toFixed(2)}</Text>
+          <Text style={styles.resumoReceita}>{fmtReais(totalReceitas)}</Text>
         </View>
         <View style={[styles.resumoDivider, { backgroundColor: Cores.borda }]} />
         <View style={styles.resumoItem}>
           <MaterialIcons name="arrow-downward" size={14} color="#E76F51" />
-          <Text style={styles.resumoDespesa}>R$ {totalDespesas.toFixed(2)}</Text>
+          <Text style={styles.resumoDespesa}>{fmtReais(totalDespesas)}</Text>
         </View>
         <View style={[styles.resumoDivider, { backgroundColor: Cores.borda }]} />
         <View style={styles.resumoItem}>
           <MaterialIcons name="account-balance" size={14} color={totalReceitas - totalDespesas >= 0 ? "#2A9D8F" : "#E76F51"} />
           <Text style={[styles.resumoBalanco, { color: totalReceitas - totalDespesas >= 0 ? "#2A9D8F" : "#E76F51" }]}>
-            R$ {(totalReceitas - totalDespesas).toFixed(2)}
+            {fmtReais(totalReceitas - totalDespesas)}
           </Text>
         </View>
       </View>
@@ -619,7 +620,7 @@ export default function TransacoesScreen() {
                   {/* Coluna direita: valor + ações */}
                   <View style={styles.transacaoAcoes}>
                     <Text style={[styles.valorText, { color: isPendente ? Cores.textoSecundario : corValor }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {prefixoValor} R${t.valor.toFixed(2)}
+                      {prefixoValor} {fmtReais(t.valor)}
                     </Text>
                     <View style={{ flexDirection: "row", marginTop: 6, gap: 4 }}>
                       <TouchableOpacity onPress={() => abrirEditarTransacao(t)} style={styles.acaoBtn}>
@@ -661,11 +662,11 @@ export default function TransacoesScreen() {
               <View style={styles.footerTotais}>
                 <View style={styles.footerItem}>
                   <MaterialIcons name="arrow-upward" size={12} color="#2A9D8F" />
-                  <Text style={styles.footerValorReceita}>R$ {totalReceitas.toFixed(2)}</Text>
+                  <Text style={styles.footerValorReceita}>{fmtReais(totalReceitas)}</Text>
                 </View>
                 <View style={styles.footerItem}>
                   <MaterialIcons name="arrow-downward" size={12} color="#E76F51" />
-                  <Text style={styles.footerValorDespesa}>R$ {totalDespesas.toFixed(2)}</Text>
+                  <Text style={styles.footerValorDespesa}>{fmtReais(totalDespesas)}</Text>
                 </View>
               </View>
             </View>

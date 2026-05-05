@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
+import { fmtReais } from "../../lib/utils";
 
 interface Transacao {
   valor: number;
@@ -483,14 +484,14 @@ export default function RelatoriosScreen() {
 
               <DetalheRow
                 label="Recebido"
-                valor={`+ R$ ${mesDetalhe.recPagas.toFixed(2)}`}
+                valor={`+ ${fmtReais(mesDetalhe.recPagas)}`}
                 cor="#2A9D8F"
                 dotCor="#2A9D8F"
                 cores={Cores}
               />
               <DetalheRow
                 label="Pago"
-                valor={`- R$ ${mesDetalhe.despPagas.toFixed(2)}`}
+                valor={`- ${fmtReais(mesDetalhe.despPagas)}`}
                 cor="#E76F51"
                 dotCor="#E76F51"
                 cores={Cores}
@@ -502,7 +503,7 @@ export default function RelatoriosScreen() {
                   {mesDetalhe.recPendentes > 0 && (
                     <DetalheRow
                       label="A receber"
-                      valor={`+ R$ ${mesDetalhe.recPendentes.toFixed(2)}`}
+                      valor={`+ ${fmtReais(mesDetalhe.recPendentes)}`}
                       cor="#457B9D"
                       dotCor="#457B9D"
                       cores={Cores}
@@ -511,7 +512,7 @@ export default function RelatoriosScreen() {
                   {mesDetalhe.despPendentes > 0 && (
                     <DetalheRow
                       label="A pagar"
-                      valor={`- R$ ${mesDetalhe.despPendentes.toFixed(2)}`}
+                      valor={`- ${fmtReais(mesDetalhe.despPendentes)}`}
                       cor="#E9C46A"
                       dotCor="#E9C46A"
                       cores={Cores}
@@ -526,7 +527,7 @@ export default function RelatoriosScreen() {
                   {mesDetalhe.isAtual && saldoDetalhe.isFuture && (
                     <DetalheRow
                       label="Saldo atual"
-                      valor={`R$ ${saldoAtualGlobal.toFixed(2)}`}
+                      valor={fmtReais(saldoAtualGlobal)}
                       cor={saldoAtualGlobal >= 0 ? "#2A9D8F" : "#E76F51"}
                       isIcon
                       iconName="account-balance-wallet"
@@ -536,7 +537,7 @@ export default function RelatoriosScreen() {
                   )}
                   <DetalheRow
                     label={saldoDetalhe.isFuture ? (mesDetalhe.isAtual ? "Saldo previsto" : "Saldo projetado") : saldoDetalhe.isPast ? "Saldo no mês" : "Saldo atual"}
-                    valor={`R$ ${saldoDetalhe.saldo.toFixed(2)}`}
+                    valor={fmtReais(saldoDetalhe.saldo)}
                     cor={saldoDetalhe.saldo >= 0 ? "#2A9D8F" : "#E76F51"}
                     isIcon
                     iconName={saldoDetalhe.isFuture ? "trending-up" : saldoDetalhe.isPast ? "history" : "account-balance-wallet"}

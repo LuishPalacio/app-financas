@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import { fmtReais } from "../../lib/utils";
 
 interface Categoria {
   id: number;
@@ -134,7 +135,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
                   {pct.toFixed(0)}%
                 </Text>
                 <Text style={{ fontSize: 10, color: isDark ? "#AAA" : "#666" }}>
-                  R$ {item.valor.toFixed(2)}
+                  {fmtReais(item.valor)}
                 </Text>
               </View>
             </View>
@@ -556,7 +557,7 @@ export default function Dashboard() {
 
     if (temLancamentos) {
       const aviso = saldoAtual > 0.005
-        ? `Esta conta possui saldo de R$ ${saldoAtual.toFixed(2)}. O saldo ficará registrado, mas a conta não aparecerá mais nas operações.\n\nDeseja arquivá-la?`
+        ? `Esta conta possui saldo de ${fmtReais(saldoAtual)}. O saldo ficará registrado, mas a conta não aparecerá mais nas operações.\n\nDeseja arquivá-la?`
         : `A conta "${conta.nome}" tem lançamentos e não pode ser excluída. Deseja arquivá-la?`;
       Alert.alert("Arquivar Conta", aviso, [
         { text: "Cancelar", style: "cancel" },
@@ -722,19 +723,19 @@ export default function Dashboard() {
           </View>
 
           <Text style={[styles.balanceTitle, { color: isDark ? "#999" : "#555" }]}>Saldo Global (Na Conta)</Text>
-          <Text style={[styles.balanceAmount, { color: isDark ? "#FFF" : "#1A1A1A" }]}>R$ {saldoAtualGlobal.toFixed(2)}</Text>
+          <Text style={[styles.balanceAmount, { color: isDark ? "#FFF" : "#1A1A1A" }]}>{fmtReais(saldoAtualGlobal)}</Text>
 
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: isDark ? "#333" : "#CCC" }}>
             <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
               <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12 }}>Entradas do Mês</Text>
               <Text style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 16 }}>
-                + R$ {receitasDoMes.toFixed(2)}
+                + {fmtReais(receitasDoMes)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
               <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12, textAlign: "right" }}>Saídas do Mês</Text>
               <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 16, textAlign: "right" }}>
-                - R$ {despesasDoMes.toFixed(2)}
+                - {fmtReais(despesasDoMes)}
               </Text>
             </TouchableOpacity>
           </View>
@@ -742,7 +743,7 @@ export default function Dashboard() {
           <View style={{ marginTop: 15, alignItems: "center", backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", padding: 10, borderRadius: 8 }}>
             <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12 }}>Balanço do Mês</Text>
             <Text style={{ color: balancoMensal >= 0 ? "#8AB17D" : "#E76F51", fontWeight: "bold", fontSize: 20 }}>
-              R$ {balancoMensal.toFixed(2)}
+              {fmtReais(balancoMensal)}
             </Text>
           </View>
         </View>
@@ -789,7 +790,7 @@ export default function Dashboard() {
                       )}
                     </View>
                     <Text style={[styles.accountBalance, { color: estilo.text }]}>
-                      R$ {calcularSaldoConta(conta).toFixed(2)}
+                      {fmtReais(calcularSaldoConta(conta))}
                     </Text>
                     <Text style={{ color: estilo.text, opacity: 0.6, fontSize: 11, marginTop: 4 }}>Toque para editar</Text>
                   </TouchableOpacity>
@@ -870,7 +871,7 @@ export default function Dashboard() {
             />
             {(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes) > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: R$ {(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes).toFixed(2)}
+                Total: {fmtReais(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes)}
               </Text>
             )}
           </View>
@@ -888,7 +889,7 @@ export default function Dashboard() {
             />
             {(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes) > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: R$ {(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes).toFixed(2)}
+                Total: {fmtReais(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes)}
               </Text>
             )}
           </View>
@@ -955,7 +956,7 @@ export default function Dashboard() {
                 <View style={{ alignItems: "center", marginBottom: 20, padding: 15, backgroundColor: Cores.pillFundo, borderRadius: 12 }}>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginBottom: 4 }}>Saldo Atual</Text>
                   <Text style={{ color: "#2A9D8F", fontSize: 26, fontWeight: "bold" }}>
-                    R$ {calcularSaldoConta(contaEditando).toFixed(2)}
+                    {fmtReais(calcularSaldoConta(contaEditando))}
                   </Text>
                 </View>
               )}
@@ -1099,7 +1100,7 @@ export default function Dashboard() {
             {/* Preview da conta */}
             <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
               <Text style={{ color: "#FFF", fontWeight: "600" }}>{nomeConta || "Nome da Conta"}</Text>
-              <Text style={{ color: "#FFF", fontWeight: "bold" }}>R$ {parseFloat(saldoInicialConta.replace(",", ".") || "0").toFixed(2)}</Text>
+              <Text style={{ color: "#FFF", fontWeight: "bold" }}>{fmtReais(parseFloat(saldoInicialConta.replace(",", ".") || "0"))}</Text>
             </View>
 
             <View style={styles.modalButtons}>
@@ -1280,7 +1281,7 @@ export default function Dashboard() {
                         {tipo === "receita" ? "Receitas" : "Despesas"}
                       </Text>
                       <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 15 }}>
-                        R$ {totalTipo.toFixed(2)}
+                        {fmtReais(totalTipo)}
                       </Text>
                     </View>
                     {dadosCat.length === 0 ? (
@@ -1293,7 +1294,7 @@ export default function Dashboard() {
                             <Text style={{ color: Cores.textoPrincipal, fontWeight: "500", flex: 1 }} numberOfLines={1}>{item.nome}</Text>
                           </View>
                           <View style={{ alignItems: "flex-end" }}>
-                            <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 13 }}>R$ {item.valor.toFixed(2)}</Text>
+                            <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 13 }}>{fmtReais(item.valor)}</Text>
                             <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>
                               {totalTipo > 0 ? `${((item.valor / totalTipo) * 100).toFixed(1)}%` : "0%"}
                             </Text>
@@ -1386,12 +1387,12 @@ export default function Dashboard() {
 
               <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
 
+              <TouchableOpacity style={[styles.input, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]} onPress={() => setMostrarCalendario(true)}>
+                <MaterialIcons name="calendar-today" size={20} color={Cores.textoSecundario} style={{ marginRight: 8 }} />
+                <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
+              </TouchableOpacity>
+              {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
               <View style={styles.rowInputs}>
-                <TouchableOpacity style={[styles.input, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda, flex: 1, marginRight: 10, flexDirection: "row", alignItems: "center", justifyContent: "center" }]} onPress={() => setMostrarCalendario(true)}>
-                  <MaterialIcons name="calendar-today" size={20} color={Cores.textoSecundario} style={{ marginRight: 8 }} />
-                  <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
-                </TouchableOpacity>
-                {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
                 <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]} placeholder={frequencia === "parcelada" ? "Valor da Parcela" : "Valor (Ex: 50)"} placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="numeric" />
                 {frequencia === "parcelada" && (
                   <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, width: 80 }]} placeholder="Vezes" placeholderTextColor={Cores.textoSecundario} value={numParcelas} onChangeText={setNumParcelas} keyboardType="numeric" />
@@ -1399,7 +1400,7 @@ export default function Dashboard() {
               </View>
               {frequencia === "parcelada" && valorTransacao && numParcelas && !isNaN(parseFloat(valorTransacao)) && !isNaN(parseInt(numParcelas)) && (
                 <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: -10, marginBottom: 10, textAlign: "right" }}>
-                  Total: R$ {(parseFloat(valorTransacao.replace(",", ".")) * parseInt(numParcelas)).toFixed(2)}
+                  Total: {fmtReais(parseFloat(valorTransacao.replace(",", ".")) * parseInt(numParcelas))}
                 </Text>
               )}
 

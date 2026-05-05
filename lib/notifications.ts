@@ -92,19 +92,41 @@ export async function agendarNotificacoesDoApp(
     });
 
     const agora = new Date();
+    const hojeStr = agora.toISOString().split("T")[0];
 
     const channelId = Platform.OS === "android" ? "finflow" : undefined;
+    const notifBase = (extra?: object) => ({ badge: 0, ...(channelId ? { android: { channelId } } : {}), ...extra });
 
-    // Notificação imediata de vencidos (3s após app abrir)
-    if (vencidas.length > 0) {
-      await Notif.scheduleNotificationAsync({
-        content: {
-          title: "🔴 FinFlow — Lançamentos Vencidos",
-          body: `Você tem ${vencidas.length} lançamento${vencidas.length > 1 ? "s" : ""} vencido${vencidas.length > 1 ? "s" : ""}. Regularize agora!`,
-          ...(channelId ? { android: { channelId } } : {}),
-        },
-        trigger: { type: "timeInterval", seconds: 3, repeats: false } as any,
-      });
+    // Remove badge do ícone do app
+    try { await Notif.setBadgeCountAsync(0); } catch {}
+
+    // Notificação de vencidos — uma vez por dia, separada por tipo
+    const chaveVencidos = `@notif_vencidos_${userId}_${hojeStr}`;
+    const jaNotificouVencidos = await AsyncStorage.getItem(chaveVencidos);
+    if (vencidas.length > 0 && !jaNotificouVencidos) {
+      await AsyncStorage.setItem(chaveVencidos, "1");
+      const despesasVencidas = vencidas.filter((t) => t.tipo === "despesa").length;
+      const receitasVencidas = vencidas.filter((t) => t.tipo === "receita").length;
+      if (despesasVencidas > 0) {
+        await Notif.scheduleNotificationAsync({
+          content: {
+            ...notifBase(),
+            title: "🔴 FinFlow — Despesas Vencidas",
+            body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!`,
+          },
+          trigger: { type: "timeInterval", seconds: 4, repeats: false } as any,
+        });
+      }
+      if (receitasVencidas > 0) {
+        await Notif.scheduleNotificationAsync({
+          content: {
+            ...notifBase(),
+            title: "🟡 FinFlow — Receitas Vencidas",
+            body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!`,
+          },
+          trigger: { type: "timeInterval", seconds: 5, repeats: false } as any,
+        });
+      }
     }
 
     // Notificações diárias com conteúdo personalizado
@@ -121,7 +143,7 @@ export async function agendarNotificacoesDoApp(
       if (hora8 > agora) {
         const seg8 = Math.floor((hora8.getTime() - agora.getTime()) / 1000);
         await Notif.scheduleNotificationAsync({
-          content: { title: "📅 FinFlow — Vencimento Hoje", body: corpo, ...(channelId ? { android: { channelId } } : {}) },
+          content: { ...notifBase(), title: "📅 FinFlow — Vencimento Hoje", body: corpo },
           trigger: { type: "timeInterval", seconds: seg8, repeats: false } as any,
         });
       }
@@ -131,7 +153,7 @@ export async function agendarNotificacoesDoApp(
       if (hora19 > agora) {
         const seg19 = Math.floor((hora19.getTime() - agora.getTime()) / 1000);
         await Notif.scheduleNotificationAsync({
-          content: { title: "⏰ FinFlow — Lembrete de Hoje", body: corpo, ...(channelId ? { android: { channelId } } : {}) },
+          content: { ...notifBase(), title: "⏰ FinFlow — Lembrete de Hoje", body: corpo },
           trigger: { type: "timeInterval", seconds: seg19, repeats: false } as any,
         });
       }
@@ -155,11 +177,7 @@ export async function agendarNotificacoesDoApp(
       const segundos = Math.floor((alvo.getTime() - agora.getTime()) / 1000);
       const idx = alvo.getDay() % mensagensNoon.length;
       await Notif.scheduleNotificationAsync({
-        content: {
-          title: "📊 FinFlow — Revisão Diária",
-          body: mensagensNoon[idx],
-          ...(channelId ? { android: { channelId } } : {}),
-        },
+        content: { ...notifBase(), title: "📊 FinFlow — Revisão Diária", body: mensagensNoon[idx] },
         trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
       });
     }
@@ -182,9 +200,9 @@ export async function agendarNotificacoesDoApp(
           const falta = Number(caixa.meta_valor) - Number(caixa.saldo_atual);
           await Notif.scheduleNotificationAsync({
             content: {
+              ...notifBase(),
               title: titulo,
               body: `"${caixa.nome}" — faltam R$ ${falta.toFixed(2)} para atingir a meta.`,
-              ...(channelId ? { android: { channelId } } : {}),
             },
             trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
           });

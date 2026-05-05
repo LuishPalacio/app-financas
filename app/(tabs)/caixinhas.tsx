@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import { fmtReais } from "../../lib/utils";
 import { useAppTheme } from "../_layout";
 
 interface Caixinha {
@@ -270,7 +271,7 @@ export default function CaixinhasScreen() {
     if (Number(caixa.saldo_atual) > 0) {
       return setModalAvisoCaixinha({
         titulo: "Ação não permitida",
-        mensagem: `O objetivo "${caixa.nome}" ainda possui R$ ${Number(caixa.saldo_atual).toFixed(2)} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
+        mensagem: `O objetivo "${caixa.nome}" ainda possui ${fmtReais(Number(caixa.saldo_atual))} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
       });
     }
     setModalConfirmarDeletar(caixa);
@@ -355,7 +356,7 @@ export default function CaixinhasScreen() {
       const saldoReal = Number(conta?.saldo_inicial ?? 0) + rec - desp;
 
       if (valorNum > saldoReal) {
-        return Alert.alert("Saldo insuficiente", `Você não tem saldo suficiente nesta conta (R$ ${saldoReal.toFixed(2)}). Deseja continuar mesmo assim?`, [
+        return Alert.alert("Saldo insuficiente", `Você não tem saldo suficiente nesta conta (${fmtReais(saldoReal)}). Deseja continuar mesmo assim?`, [
           { text: "Cancelar", style: "cancel" },
           { text: "Sim, continuar", style: "destructive", onPress: () => executarMovimento(valorNum, novoSaldoCaixinha) },
         ]);
@@ -387,7 +388,7 @@ export default function CaixinhasScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.totalCard, { backgroundColor: Cores.totalCardBg }]}>
           <Text style={styles.totalCardTitle}>Total Poupado</Text>
-          <Text style={styles.totalCardAmount}>R$ {totalGuardado.toFixed(2)}</Text>
+          <Text style={styles.totalCardAmount}>{fmtReais(totalGuardado)}</Text>
           <TouchableOpacity style={styles.addButton} onPress={() => setModalNovaVisivel(true)}>
             <Text style={styles.addButtonText}>+ Novo Objetivo</Text>
           </TouchableOpacity>
@@ -481,7 +482,7 @@ export default function CaixinhasScreen() {
               <View style={{ alignItems: "center", marginBottom: 20 }}>
                 <Text style={{ color: Cores.textoSecundario, fontSize: 13 }}>Saldo atual</Text>
                 <Text style={{ color: caixaOpcoes.cor, fontWeight: "bold", fontSize: 22 }}>
-                  R$ {Number(caixaOpcoes.saldo_atual).toFixed(2)}
+                  {fmtReais(Number(caixaOpcoes.saldo_atual))}
                 </Text>
               </View>
             )}
@@ -784,7 +785,7 @@ export default function CaixinhasScreen() {
               <View style={{ alignItems: "center", marginBottom: 15 }}>
                 <Text style={{ color: Cores.textoSecundario, fontSize: 13 }}>Guardado atualmente</Text>
                 <Text style={{ color: caixaSelecionada.cor, fontWeight: "bold", fontSize: 20 }}>
-                  R$ {Number(caixaSelecionada.saldo_atual).toFixed(2)}
+                  {fmtReais(Number(caixaSelecionada.saldo_atual))}
                 </Text>
               </View>
             )}
@@ -870,11 +871,11 @@ export default function CaixinhasScreen() {
               <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 12, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 10 }}>
                 <View style={{ alignItems: "center" }}>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>Guardado</Text>
-                  <Text style={{ color: "#2A9D8F", fontWeight: "bold", fontSize: 14 }}>R$ {totalGuardadoHist.toFixed(2)}</Text>
+                  <Text style={{ color: "#2A9D8F", fontWeight: "bold", fontSize: 14 }}>{fmtReais(totalGuardadoHist)}</Text>
                 </View>
                 <View style={{ alignItems: "center" }}>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>Resgatado</Text>
-                  <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 14 }}>R$ {totalResgatadoHist.toFixed(2)}</Text>
+                  <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 14 }}>{fmtReais(totalResgatadoHist)}</Text>
                 </View>
               </View>
             )}
@@ -907,7 +908,7 @@ export default function CaixinhasScreen() {
                       </View>
                       <View style={{ alignItems: "flex-end" }}>
                         <Text style={{ color: isGuardar ? "#2A9D8F" : "#E76F51", fontWeight: "bold", fontSize: 14 }}>
-                          {isGuardar ? "+" : "-"} R$ {Number(mov.valor).toFixed(2)}
+                          {isGuardar ? "+" : "-"} {fmtReais(Number(mov.valor))}
                         </Text>
                         <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>
                           {partes[2]}/{partes[1]}/{partes[0]}
