@@ -240,7 +240,7 @@ export default function TransacoesScreen() {
   const abrirEditarTransacao = (t: Transacao) => {
     setTransacaoEditando(t);
     setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : t.descricao);
-    setEditValor(String(t.valor));
+    setEditValor(t.valor.toFixed(2).replace(".", ","));
     const partes = (t.data_vencimento || new Date().toISOString().split("T")[0]).split("-");
     setEditData(new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2])));
     setEditStatus(t.status === "paga" ? "paga" : "pendente");
@@ -705,14 +705,17 @@ export default function TransacoesScreen() {
               />
 
               {/* Valor */}
-              <TextInput
-                style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", color: isDark ? "#FFF" : "#1A1A1A", borderColor: isDark ? "#444" : "#DDD" }]}
-                placeholder="Valor (Ex: 50.00)"
-                placeholderTextColor={isDark ? "#888" : "#AAA"}
-                value={editValor}
-                onChangeText={setEditValor}
-                keyboardType="numeric"
-              />
+              <View style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", borderColor: isDark ? "#444" : "#DDD", flexDirection: "row", alignItems: "center" }]}>
+                <Text style={{ color: isDark ? "#888" : "#AAA", fontSize: 15, marginRight: 4 }}>R$</Text>
+                <TextInput
+                  style={{ flex: 1, color: isDark ? "#FFF" : "#1A1A1A", fontSize: 15 }}
+                  placeholder="0,00"
+                  placeholderTextColor={isDark ? "#888" : "#AAA"}
+                  value={editValor}
+                  onChangeText={setEditValor}
+                  keyboardType="decimal-pad"
+                />
+              </View>
 
               {/* Data */}
               <TouchableOpacity

@@ -223,7 +223,7 @@ export default function Dashboard() {
   const [contaDestinoId, setContaDestinoId] = useState<number | null>(null);
   const [caixinhaDestinoId, setCaixinhaDestinoId] = useState<number | null>(null);
   const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">("unica");
-  const [numParcelas, setNumParcelas] = useState("2");
+  const [numParcelas, setNumParcelas] = useState("");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
@@ -1393,7 +1393,10 @@ export default function Dashboard() {
               </TouchableOpacity>
               {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
               <View style={styles.rowInputs}>
-                <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]} placeholder={frequencia === "parcelada" ? "Valor da Parcela" : "Valor (Ex: 50)"} placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="numeric" />
+                <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center", flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]}>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+                  <TextInput style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="decimal-pad" />
+                </View>
                 {frequencia === "parcelada" && (
                   <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, width: 80 }]} placeholder="Vezes" placeholderTextColor={Cores.textoSecundario} value={numParcelas} onChangeText={setNumParcelas} keyboardType="numeric" />
                 )}

@@ -233,7 +233,7 @@ export default function CaixinhasScreen() {
   const abrirEditar = (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
     setNomeEditCaixa(caixa.nome);
-    setMetaEditCaixa(String(caixa.meta_valor));
+    setMetaEditCaixa(Number(caixa.meta_valor).toFixed(2).replace(".", ","));
     setCorEditCaixa(caixa.cor);
     setIconeEditCaixa(caixa.icone);
     setCompartilhadoEditCaixa(caixa.compartilhado ?? false);
@@ -576,14 +576,17 @@ export default function CaixinhasScreen() {
                 value={nomeEditCaixa}
                 onChangeText={setNomeEditCaixa}
               />
-              <TextInput
-                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-                placeholderTextColor={Cores.textoSecundario}
-                placeholder="Valor da meta"
-                value={metaEditCaixa}
-                onChangeText={setMetaEditCaixa}
-                keyboardType="numeric"
-              />
+              <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+                <TextInput
+                  style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
+                  placeholderTextColor={Cores.textoSecundario}
+                  placeholder="0,00"
+                  value={metaEditCaixa}
+                  onChangeText={setMetaEditCaixa}
+                  keyboardType="decimal-pad"
+                />
+              </View>
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Data prazo (opcional):</Text>
               <TouchableOpacity
@@ -688,22 +691,28 @@ export default function CaixinhasScreen() {
                 value={nomeCaixinha}
                 onChangeText={setNomeCaixinha}
               />
-              <TextInput
-                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-                placeholderTextColor={Cores.textoSecundario}
-                placeholder="Qual é o valor da meta? (Ex: 1500)"
-                value={metaValor}
-                onChangeText={setMetaValor}
-                keyboardType="numeric"
-              />
-              <TextInput
-                style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-                placeholderTextColor={Cores.textoSecundario}
-                placeholder="Saldo inicial (opcional, Ex: 200)"
-                value={saldoInicialCaixinha}
-                onChangeText={setSaldoInicialCaixinha}
-                keyboardType="numeric"
-              />
+              <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+                <TextInput
+                  style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
+                  placeholderTextColor={Cores.textoSecundario}
+                  placeholder="0,00"
+                  value={metaValor}
+                  onChangeText={setMetaValor}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+                <TextInput
+                  style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
+                  placeholderTextColor={Cores.textoSecundario}
+                  placeholder="0,00 (opcional)"
+                  value={saldoInicialCaixinha}
+                  onChangeText={setSaldoInicialCaixinha}
+                  keyboardType="decimal-pad"
+                />
+              </View>
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Data prazo (opcional):</Text>
               <TouchableOpacity
@@ -799,14 +808,17 @@ export default function CaixinhasScreen() {
               </TouchableOpacity>
             </View>
 
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholderTextColor={Cores.textoSecundario}
-              placeholder={tipoMovimento === "guardar" ? "Valor a adicionar (Ex: 50)" : "Valor a resgatar (Ex: 50)"}
-              value={valorMovimento}
-              onChangeText={setValorMovimento}
-              keyboardType="numeric"
-            />
+            <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+              <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+              <TextInput
+                style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
+                placeholderTextColor={Cores.textoSecundario}
+                placeholder="0,00"
+                value={valorMovimento}
+                onChangeText={setValorMovimento}
+                keyboardType="decimal-pad"
+              />
+            </View>
 
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>
               {tipoMovimento === "guardar" ? "Saiu de qual conta?" : "Vai entrar em qual conta?"}
