@@ -30,11 +30,14 @@ interface RespostaIA {
   intent:
     | "create_transaction"
     | "create_account"
+    | "edit_account"
     | "create_category"
+    | "edit_category"
     | "delete_category"
     | "create_caixinha"
     | "move_caixinha"
     | "delete_caixinha"
+    | "archive_caixinha"
     | "confirm_pending"
     | "delete_transaction"
     | "archive_account"
@@ -71,6 +74,9 @@ INTERPRETAÇÃO DE RESPOSTAS (CRÍTICO):
 - "hoje", "agora" → date = data de hoje
 - "sim", "já paguei", "pago", "recebido" → status = "paga"
 - "não", "pendente", "ainda não" → status = "pendente"
+- "única", "só uma", "simples", "normal" → frequencia = "unica"
+- "parcelada", "parcelas", "vezes", "em X vezes" → frequencia = "parcelada"
+- "recorrente", "fixa", "todo mês", "mensal" → frequencia = "recorrente"
 - Variações de cor: "laranjo"→Laranja, "azulado"→Azul, "roxinho"→Roxo, "verde água"→Verde, etc.
 - Se a resposta for razoavelmente relacionada ao campo perguntado, aceite-a.
 
@@ -80,19 +86,34 @@ Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho, Verde claro, Laranja c
 Quando perguntar cor, use este formato: "Qual a cor? Opções: Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho"
 No campo "cor" do JSON, coloque apenas o nome da cor (ex: "Laranja"). O sistema converte automaticamente.
 
-CAMPOS — create_transaction (nesta ordem):
-1. tipo: "receita" ou "despesa"
-2. value: valor numérico
-3. date: data (padrão hoje)
-4. status: "paga" ou "pendente"
-5. account_name: de CONTAS_DISPONIVEIS
-6. category_name: DESPESA → CATEGORIAS_DESPESA; RECEITA → CATEGORIAS_RECEITA
-7. description: descrição
+ÍCONES — use no campo "icone" do JSON (nunca mostre o nome técnico ao usuário):
+computador/pc/notebook → "computer" | casa/moradia/apartamento → "home"
+carro/veículo/moto → "directions_car" | viagem/férias/avião → "flight"
+poupança/cofrinho/economia → "savings" | celular/telefone → "smartphone"
+roupa/vestuário → "checkroom" | estudo/escola/livro → "school"
+saúde/médico/hospital → "local_hospital" | academia/esporte → "fitness_center"
+presente/gift → "card_giftcard" | joia/aliança/anel → "diamond"
+Quando perguntar ícone: "Qual o ícone? (Ex: casa, carro, viagem, computador, poupança)"
 
-RESUMO create_transaction:
-"Criação de [receita/despesa]\nConta: [nome]\nValor: R$ [valor]\nData: [DD/MM/AAAA]\nCategoria: [nome]\nDescrição: [texto]\nStatus: [Pago/Recebido ou Pendente]\n\nConfirma as informações?"
+CAMPOS — create_transaction (perguntar UM por vez, NESTA ORDEM):
+1. tipo → "Tipo? Receita, Despesa ou Transferência"
+2. frequencia → "Frequência?\n• Única\n• Parcelada\n• Recorrente"
+3. num_parcelas → SE parcelada: "Em quantas parcelas?"
+4. status → SE única ou parcelada E não transferência: "Já foi pag[o/a]? (sim/não)" — SE recorrente: pular, usar "pendente" — SE transferência: pular, usar "paga"
+5. date → "Data? (DD/MM/AAAA)" — padrão: hoje
+6. description → "Descrição?"
+7. value → "Valor?"
+8. account_name → SE transferência: "Conta de origem?" — senão: "Conta?"
+9. account_destino → SE transferência: "Conta ou objetivo de destino?\nContas: [CONTAS_DISPONIVEIS]\nObjetivos: [CAIXINHAS_DISPONIVEIS]"
+10. category_name → SE não transferência: perguntar categoria — DESPESA→CATEGORIAS_DESPESA; RECEITA→CATEGORIAS_RECEITA
 
-CAMPOS — create_account (perguntar UM por vez, TODOS obrigatórios — não pule nem assuma nenhum):
+RESUMO create_transaction (receita/despesa):
+"[Tipo] [frequência][" (Nx)" se parcelada]\n[DD/MM/AAAA]\n[Descrição]\nR$ [valor]\nConta: [nome]\nCategoria: [nome]\nStatus: [Pago/Recebido ou Pendente]\n\nConfirma as informações?"
+
+RESUMO create_transaction (transferência):
+"Transferência [frequência]\n[DD/MM/AAAA]\nR$ [valor]\nDe: [conta_origem] → Para: [destino]\nDescrição: [descrição]\n\nConfirma?"
+
+CAMPOS — create_account (perguntar UM por vez, TODOS obrigatórios):
 1. nome → "Qual o nome da conta?"
 2. saldo_inicial → "Qual o saldo inicial? (pode ser 0)"
 3. cor → "Qual a cor da conta? Opções: Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho"
@@ -100,7 +121,16 @@ CAMPOS — create_account (perguntar UM por vez, TODOS obrigatórios — não pu
 RESUMO create_account:
 "Criação de conta\nNome: [nome]\nSaldo inicial: R$ [valor]\nCor: [nome da cor]\n\nConfirma as informações?"
 
-CAMPOS — create_category (perguntar UM por vez, TODOS obrigatórios — não pule nem assuma nenhum):
+CAMPOS — edit_account (perguntar UM por vez):
+1. nome_atual → "Qual conta deseja alterar?\n[listar CONTAS_DISPONIVEIS com • uma por linha]"
+2. campo_alterar → "O que deseja alterar?\n• Nome\n• Saldo inicial\n• Cor\n• Excluir conta\n• Arquivar conta"
+3. novo_valor → SE nome/saldo_inicial/cor: perguntar o novo valor — SE excluir/arquivar: status="ready_for_confirmation" diretamente
+
+RESUMO edit_account (nome/saldo/cor): "Edição de conta\nConta: [nome_atual]\n[Campo]: [novo_valor]\n\nConfirma?"
+RESUMO edit_account (excluir): "Excluir conta: [nome]\n⚠️ Se tiver lançamentos será arquivada automaticamente.\n\nConfirma?"
+RESUMO edit_account (arquivar): "Arquivar conta: [nome]\n\nConfirma?"
+
+CAMPOS — create_category (perguntar UM por vez, TODOS obrigatórios):
 1. tipo → "A categoria é de receita ou despesa?"
 2. nome → "Qual o nome da categoria?"
 3. cor → "Qual a cor? Opções: Verde, Coral, Laranja, Azul, Roxo, Azul escuro, Vermelho, Verde claro, Laranja claro"
@@ -109,65 +139,75 @@ CAMPOS — create_category (perguntar UM por vez, TODOS obrigatórios — não p
 RESUMO create_category:
 "Criação de categoria\nTipo: [receita/despesa]\nNome: [nome]\nCor: [nome da cor]\n\nConfirma as informações?"
 
+CAMPOS — edit_category (perguntar UM por vez):
+1. nome_atual → "Qual categoria deseja alterar?"
+2. campo_alterar → "O que deseja alterar?\n• Nome\n• Tipo\n• Cor\n• Ícone\n• Excluir\n• Arquivar"
+3. novo_valor → SE nome/tipo/cor/ícone: perguntar novo valor — SE excluir/arquivar: status="ready_for_confirmation"
+
+RESUMO edit_category (nome/tipo/cor/ícone): "Edição de categoria\nCategoria: [nome_atual]\n[Campo]: [novo_valor]\n\nConfirma?"
+RESUMO edit_category (excluir/arquivar): "[Excluir/Arquivar] categoria: [nome]\n[Se excluir com lançamentos: será arquivada.]\n\nConfirma?"
+
 CAMPOS — delete_category (perguntar UM por vez):
 1. nome → "Qual o nome da categoria que deseja excluir?"
 
 RESUMO delete_category:
 "Exclusão de categoria\nNome: [nome]\n\nConfirma? (se tiver lançamentos vinculados, será arquivada)"
 
-CAMPOS — create_caixinha (perguntar UM por vez, TODOS obrigatórios — não pule nem assuma nenhum):
+CAMPOS — create_caixinha (perguntar UM por vez, TODOS obrigatórios exceto data_prazo):
 1. nome → "Qual o nome do objetivo?"
 2. meta_valor → "Qual o valor da meta?"
-3. saldo_inicial → "Qual o saldo inicial do objetivo? (pode ser 0)"
-4. cor → "Qual a cor? Opções: Verde, Coral, Laranja, Azul escuro, Verde claro"
-(ícone: usar "savings" como padrão — NÃO perguntar ao usuário)
+3. data_prazo → "Qual a data prazo? (DD/MM/AAAA) — opcional, diga 'sem prazo' para pular"
+4. saldo_inicial → "Qual o valor inicial? (pode ser 0)"
+5. cor → "Qual a cor? Opções: Verde, Coral, Laranja, Azul escuro, Verde claro"
+6. icone → "Qual o ícone? (Ex: casa, carro, viagem, computador, poupança)"
 
 RESUMO create_caixinha:
-"Criação de objetivo\nNome: [nome]\nMeta: R$ [valor]\nSaldo inicial: R$ [valor]\nCor: [nome da cor]\n\nConfirma as informações?"
+"Criação de objetivo\nNome: [nome]\nMeta: R$ [valor]\n[Prazo: DD/MM/AAAA — só se informado]\nSaldo inicial: R$ [valor]\nCor: [nome da cor]\n\nConfirma as informações?"
 
 CAMPOS — move_caixinha (nesta ordem):
-1. tipo_movimento: "guardar" (Conta→Objetivo) ou "resgatar" (Objetivo→Conta)
-2. caixinha_name: de CAIXINHAS_DISPONIVEIS
-3. valor: quanto movimentar
-4. account_name: de CONTAS_DISPONIVEIS
+1. tipo_movimento → "Guardar (Conta→Objetivo) ou Resgatar (Objetivo→Conta)?"
+2. caixinha_name → de CAIXINHAS_DISPONIVEIS
+3. valor → "Qual o valor?"
+4. account_name → de CONTAS_DISPONIVEIS
 
-RESUMO move_caixinha guardar:
-"Adicionar valor ao objetivo\nObjetivo: [nome]\nConta: [nome]\nValor: R$ [valor]\n\nConfirma a transferência?"
+RESUMO move_caixinha guardar: "Adicionar valor ao objetivo\nObjetivo: [nome]\nConta: [nome]\nValor: R$ [valor]\n\nConfirma a transferência?"
+RESUMO move_caixinha resgatar: "Retirada do objetivo\nObjetivo: [nome]\nConta: [nome]\nValor: R$ [valor]\n\nConfirma a transferência?"
 
-RESUMO move_caixinha resgatar:
-"Retirada do objetivo\nObjetivo: [nome]\nConta: [nome]\nValor: R$ [valor]\n\nConfirma a transferência?"
+REGRA CRÍTICA delete_caixinha — verifique o saldo em CAIXINHAS_DISPONIVEIS antes de montar o resumo:
+- SE saldo > 0: intent="archive_caixinha", status="ready_for_confirmation", message="O objetivo [nome] possui saldo de R$ [saldo] e não pode ser excluído. Deseja arquivar?"
+- SE saldo = 0: intent="delete_caixinha" normalmente
 
-CAMPOS — delete_caixinha:
-1. caixinha_name: de CAIXINHAS_DISPONIVEIS
+CAMPOS — delete_caixinha / archive_caixinha:
+1. caixinha_name → de CAIXINHAS_DISPONIVEIS
 
-RESUMO delete_caixinha:
-"Exclusão de objetivo\nDescrição: [nome]\nSaldo atual: R$ [saldo]\n\nConfirma a exclusão?"
+RESUMO delete_caixinha (saldo=0): "Exclusão de objetivo\nNome: [nome]\n\nConfirma a exclusão?"
+RESUMO archive_caixinha (saldo>0): "Arquivar objetivo: [nome]\nSaldo atual: R$ [saldo]\n\nConfirma o arquivamento?"
 
 CAMPOS — confirm_pending:
-1. description: descrição aproximada (opcional)
-2. account_name: de CONTAS_DISPONIVEIS (opcional)
+1. description → descrição aproximada (opcional)
+2. account_name → de CONTAS_DISPONIVEIS (opcional)
 Use PENDENTES para montar o resumo. Se houver mais de um resultado, liste e pergunte qual confirmar.
 
 RESUMO confirm_pending:
 "Confirmação de pagamento/recebimento\nConta: [nome]\nValor: R$ [valor]\nData: [DD/MM/AAAA]\nDescrição: [texto]\nCategoria: [nome]\n\nDeseja confirmar?"
 
 CAMPOS — delete_transaction:
-1. description: descrição do lançamento
-2. date: data (opcional)
+1. description → descrição do lançamento
+2. date → data (opcional)
 
 RESUMO delete_transaction:
 "Exclusão de lançamento\nTipo: [receita/despesa]\nConta: [nome]\nValor: R$ [valor]\nData: [DD/MM/AAAA]\nCategoria: [nome]\nDescrição: [texto]\n\nConfirma a exclusão?"
 
 CAMPOS — financial_projection:
-1. target_date: data alvo (YYYY-MM-DD) — pergunte se não informada
+1. target_date → data alvo (YYYY-MM-DD) — pergunte se não informada
 
 CAMPOS — savings_goal:
-1. goal_amount: valor a economizar
-2. target_date: data prazo (YYYY-MM-DD)
+1. goal_amount → valor a economizar
+2. target_date → data prazo (YYYY-MM-DD)
 
 INTENTS e regras:
-- create_transaction, create_account, create_category, delete_category: coleta → confirmação → execução
-- create_caixinha, move_caixinha, delete_caixinha: coleta → confirmação → execução
+- create_transaction, create_account, edit_account, create_category, edit_category, delete_category: coleta → confirmação → execução
+- create_caixinha, move_caixinha, delete_caixinha, archive_caixinha: coleta → confirmação → execução
 - confirm_pending, delete_transaction, archive_account: coleta → confirmação → execução
 - analyze_finances: execute direto. Inclua regra 50/30/20 SOMENTE quando usuário pedir explicitamente ("análise de gastos", "50/30/20", "regra", "necessidades e desejos")
 - financial_projection: colete target_date, depois execute direto (sem confirmação)
@@ -227,7 +267,7 @@ export default function ChatIA() {
     const [resContas, resCat, resCaixa, resTransacoes] = await Promise.all([
       supabase.from("contas").select("id, nome, saldo_inicial, compartilhado, arquivado"),
       supabase.from("categorias").select("id, nome, tipo, cor").eq("user_id", uid).eq("ativa", 1),
-      supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, compartilhado"),
+      supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, compartilhado").neq("arquivado", true),
       supabase.from("transacoes").select("id, tipo, valor, descricao, status, categoria_id, conta_id, data_vencimento").eq("user_id", uid).order("data_vencimento", { ascending: false }).limit(500),
     ]);
 
@@ -335,6 +375,23 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     }
   }, [mensagens]);
 
+  const mapearIcone = (icone: string): string => {
+    const n = (icone || "").toLowerCase();
+    if (n.includes("comput") || n.includes("notebook") || n.includes("laptop") || n === "pc") return "computer";
+    if (n.includes("casa") || n.includes("moradia") || n.includes("apartamento")) return "home";
+    if (n.includes("carro") || n.includes("veiculo") || n.includes("veículo") || n.includes("moto")) return "directions_car";
+    if (n.includes("viagem") || n.includes("ferias") || n.includes("férias") || n.includes("aviao") || n.includes("avião")) return "flight";
+    if (n.includes("celular") || n.includes("telefone") || n.includes("smartphone")) return "smartphone";
+    if (n.includes("roupa") || n.includes("vestuario") || n.includes("vestuário")) return "checkroom";
+    if (n.includes("estudo") || n.includes("escola") || n.includes("livro") || n.includes("faculdade")) return "school";
+    if (n.includes("saude") || n.includes("saúde") || n.includes("medico") || n.includes("médico") || n.includes("hospital")) return "local_hospital";
+    if (n.includes("academia") || n.includes("esporte") || n.includes("fitness") || n.includes("treino")) return "fitness_center";
+    if (n.includes("presente") || n.includes("gift")) return "card_giftcard";
+    if (n.includes("joia") || n.includes("joias") || n.includes("aliança") || n.includes("alianca") || n.includes("anel")) return "diamond";
+    if (/^[a-z_]+$/.test(n) && n.length < 30) return n;
+    return "savings";
+  };
+
   const mapearCor = (cor: string): string => {
     const mapa: Record<string, string> = {
       "verde": "#2A9D8F", "coral": "#E76F51", "laranja": "#EC7000",
@@ -389,28 +446,82 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   const criarTransacao = async (data: Record<string, any>): Promise<string> => {
+    const tipo = (data.tipo || "despesa").toLowerCase();
+    if (tipo === "transferencia" || tipo === "transferência") return criarTransferencia(data);
+
     const conta = resolverConta(data);
     if (!conta) return "Nenhuma conta encontrada. Crie uma conta primeiro.";
 
-    const tipo = data.tipo || "despesa";
     const cat = resolverCategoria(data, tipo);
+    const dataBase = converterData(data.date);
+    const status = data.status === "pendente" ? "pendente" : "paga";
+    const frequencia = (data.frequencia || "unica").toLowerCase();
+    const numParcelas = parseInt(data.num_parcelas || "1");
+    const descBase = data.description || "Sem descrição";
 
-    const dataVenc = converterData(data.date);
+    let totalRep = 1;
+    if (frequencia === "parcelada") totalRep = isNaN(numParcelas) || numParcelas < 2 ? 2 : numParcelas;
+    else if (frequencia === "recorrente" || frequencia === "fixa") totalRep = 60;
 
-    const { error } = await supabase.from("transacoes").insert({
-      tipo,
-      valor: Number(data.value),
-      descricao: data.description || "Sem descrição",
-      status: data.status === "pendente" ? "pendente" : "paga",
-      data_vencimento: dataVenc,
-      conta_id: conta.id,
-      categoria_id: cat?.id ?? null,
-      user_id: session?.user?.id,
-    });
+    const baseParts = dataBase.split("-");
+    const baseYear = parseInt(baseParts[0]);
+    const baseMonth = parseInt(baseParts[1]) - 1;
+    const baseDay = parseInt(baseParts[2]);
 
-    if (error) return `Erro ao criar transação: ${error.message}`;
+    for (let i = 0; i < totalRep; i++) {
+      const dt = new Date(baseYear, baseMonth + i, baseDay);
+      const dataFmt = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+      let desc = descBase;
+      if (frequencia === "parcelada") desc = `${descBase} (${i + 1}/${totalRep})`;
+      else if (frequencia === "recorrente" || frequencia === "fixa") desc = `${descBase} (Fixa)`;
+      const { error } = await supabase.from("transacoes").insert({
+        tipo, valor: Number(data.value), descricao: desc, status,
+        data_vencimento: dataFmt, conta_id: conta.id,
+        categoria_id: cat?.id ?? null, user_id: session?.user?.id,
+      });
+      if (error) return `Erro ao criar lançamento: ${error.message}`;
+    }
+
     await carregarContexto();
-    return `✅ ${tipo === "receita" ? "Receita" : "Despesa"} de R$ ${Number(data.value).toFixed(2)} criada!\n📅 ${formatarDataBR(dataVenc)}\n📝 ${data.description}\n🏦 Conta: ${conta.nome}${cat ? `\n🏷 Categoria: ${cat.nome}` : ""}`;
+    const tipoLabel = tipo === "receita" ? "Receita" : "Despesa";
+    const freqLabel = frequencia === "parcelada" ? ` (${totalRep}x)` : frequencia === "recorrente" ? " recorrente" : "";
+    return `✅ ${tipoLabel}${freqLabel} de R$ ${Number(data.value).toFixed(2)} criada!\n📅 ${formatarDataBR(dataBase)}\n📝 ${descBase}\n🏦 Conta: ${conta.nome}${cat ? `\n🏷 Categoria: ${cat.nome}` : ""}`;
+  };
+
+  const criarTransferencia = async (data: Record<string, any>): Promise<string> => {
+    const contaOrigem = resolverConta(data);
+    if (!contaOrigem) return "Conta de origem não encontrada.";
+    const destino = (data.account_destino || data.conta_destino || "").toLowerCase();
+    const dataVenc = converterData(data.date);
+    const valor = Number(data.value);
+    const desc = data.description || "Transferência";
+
+    const caixinhaDestino = caixinhasUsuario.find((c) => c.nome.toLowerCase().includes(destino));
+    const { error: errDesp } = await supabase.from("transacoes").insert({
+      tipo: "despesa", valor,
+      descricao: caixinhaDestino ? `Guardar em: ${caixinhaDestino.nome}` : desc,
+      status: "paga", data_vencimento: dataVenc,
+      conta_id: contaOrigem.id, categoria_id: null, user_id: session?.user?.id,
+    });
+    if (errDesp) return `Erro na transferência: ${errDesp.message}`;
+
+    if (caixinhaDestino) {
+      const novoSaldo = Number(caixinhaDestino.saldo_atual) + valor;
+      await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaDestino.id);
+      await carregarContexto();
+      return `✅ R$ ${valor.toFixed(2)} transferido para o objetivo "${caixinhaDestino.nome}"!\n🏦 De: ${contaOrigem.nome}`;
+    }
+
+    const contaDestino = contasUsuario.find((c) => c.nome.toLowerCase().includes(destino));
+    if (!contaDestino) return `Conta de destino "${data.account_destino}" não encontrada.`;
+    const { error: errRec } = await supabase.from("transacoes").insert({
+      tipo: "receita", valor, descricao: desc,
+      status: "paga", data_vencimento: dataVenc,
+      conta_id: contaDestino.id, categoria_id: null, user_id: session?.user?.id,
+    });
+    if (errRec) return `Erro ao registrar destino: ${errRec.message}`;
+    await carregarContexto();
+    return `✅ Transferência de R$ ${valor.toFixed(2)} realizada!\n📅 ${formatarDataBR(dataVenc)}\n🏦 De: ${contaOrigem.nome} → Para: ${contaDestino.nome}`;
   };
 
   const criarConta = async (data: Record<string, any>): Promise<string> => {
@@ -428,17 +539,82 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
   const criarCaixinha = async (data: Record<string, any>): Promise<string> => {
     const saldoInicial = Number(data.saldo_inicial || 0);
+    const prazoRaw = (data.data_prazo || "").toLowerCase();
+    const prazo = prazoRaw && prazoRaw !== "sem prazo" && prazoRaw !== "nao" && prazoRaw !== "não" && prazoRaw !== "pular"
+      ? converterData(data.data_prazo) : null;
     const { error } = await supabase.from("caixinhas").insert({
       user_id: session?.user?.id,
       nome: data.nome || "Novo Objetivo",
       meta_valor: Number(data.meta_valor || 0),
       saldo_atual: saldoInicial,
       cor: mapearCor(data.cor || "verde"),
-      icone: data.icone || "savings",
+      icone: mapearIcone(data.icone || "savings"),
+      data_prazo: prazo,
     });
     if (error) return `Erro ao criar objetivo: ${error.message}`;
     await carregarContexto();
-    return `✅ Objetivo "${data.nome}" criado!\n🎯 Meta: R$ ${Number(data.meta_valor).toFixed(2)}\n💰 Saldo inicial: R$ ${saldoInicial.toFixed(2)}`;
+    return `✅ Objetivo "${data.nome}" criado!\n🎯 Meta: R$ ${Number(data.meta_valor).toFixed(2)}${prazo ? `\n📅 Prazo: ${formatarDataBR(prazo)}` : ""}\n💰 Saldo inicial: R$ ${saldoInicial.toFixed(2)}`;
+  };
+
+  const editarConta = async (data: Record<string, any>): Promise<string> => {
+    const nome = data.nome_atual || data.nome || "";
+    const conta = contasUsuario.find((c) => c.nome.toLowerCase().includes(nome.toLowerCase()));
+    if (!conta) return `Conta "${nome}" não encontrada.`;
+    const campo = (data.campo_alterar || "").toLowerCase();
+    if (campo.includes("excluir") || campo.includes("deletar")) {
+      const { count } = await supabase.from("transacoes").select("id", { count: "exact", head: true }).eq("conta_id", conta.id);
+      if ((count ?? 0) > 0) {
+        const { error } = await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
+        if (error) return `Erro ao arquivar: ${error.message}`;
+        await carregarContexto();
+        return `✅ Conta "${conta.nome}" possui ${count} lançamento(s) e foi arquivada (não excluída).`;
+      }
+      const { error } = await supabase.from("contas").delete().eq("id", conta.id);
+      if (error) return `Erro ao excluir: ${error.message}`;
+      await carregarContexto();
+      return `✅ Conta "${conta.nome}" excluída com sucesso!`;
+    }
+    if (campo.includes("arquivar")) {
+      const { error } = await supabase.from("contas").update({ arquivado: true }).eq("id", conta.id);
+      if (error) return `Erro ao arquivar: ${error.message}`;
+      await carregarContexto();
+      return `✅ Conta "${conta.nome}" arquivada com sucesso!`;
+    }
+    const updates: Record<string, any> = {};
+    const novoValor = data.novo_valor ?? "";
+    if (campo.includes("nome")) updates.nome = String(novoValor).trim();
+    else if (campo.includes("saldo")) updates.saldo_inicial = Number(String(novoValor).replace(",", "."));
+    else if (campo.includes("cor")) updates.cor = mapearCor(String(novoValor));
+    if (Object.keys(updates).length === 0) return "Nenhuma alteração identificada.";
+    const { error } = await supabase.from("contas").update(updates).eq("id", conta.id);
+    if (error) return `Erro ao atualizar: ${error.message}`;
+    await carregarContexto();
+    return `✅ Conta "${conta.nome}" atualizada com sucesso!`;
+  };
+
+  const editarCategoria = async (data: Record<string, any>): Promise<string> => {
+    const nome = data.nome_atual || data.nome || "";
+    const cat = categoriasUsuario.find((c) => c.nome.toLowerCase().includes(nome.toLowerCase()));
+    if (!cat) return `Categoria "${nome}" não encontrada.`;
+    const campo = (data.campo_alterar || "").toLowerCase();
+    if (campo.includes("excluir") || campo.includes("deletar")) return deletarOuArquivarCategoria({ nome: cat.nome });
+    if (campo.includes("arquivar")) {
+      const { error } = await supabase.from("categorias").update({ ativa: 0 }).eq("id", cat.id);
+      if (error) return `Erro ao arquivar: ${error.message}`;
+      await carregarContexto();
+      return `✅ Categoria "${cat.nome}" arquivada com sucesso!`;
+    }
+    const updates: Record<string, any> = {};
+    const novoValor = data.novo_valor ?? "";
+    if (campo.includes("nome")) updates.nome = String(novoValor).trim();
+    else if (campo.includes("tipo")) updates.tipo = String(novoValor).toLowerCase().includes("receita") ? "receita" : "despesa";
+    else if (campo.includes("cor")) updates.cor = mapearCor(String(novoValor));
+    else if (campo.includes("icon") || campo.includes("ícone")) updates.icone = mapearIcone(String(novoValor));
+    if (Object.keys(updates).length === 0) return "Nenhuma alteração identificada.";
+    const { error } = await supabase.from("categorias").update(updates).eq("id", cat.id);
+    if (error) return `Erro ao atualizar: ${error.message}`;
+    await carregarContexto();
+    return `✅ Categoria "${cat.nome}" atualizada com sucesso!`;
   };
 
   const movimentarCaixinha = async (data: Record<string, any>): Promise<string> => {
@@ -581,14 +757,24 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       c.id === Number(data.caixinha_id) || c.nome.toLowerCase().includes(nomeCaixa.toLowerCase())
     );
     if (!caixinha) return "Objetivo não encontrado.";
-    const { count } = await supabase.from("transacoes").select("id", { count: "exact", head: true })
-      .eq("user_id", session?.user?.id)
-      .or(`descricao.ilike.Guardar em: ${caixinha.nome},descricao.ilike.Resgate de: ${caixinha.nome}`);
-    if ((count ?? 0) > 0) return `Não é possível excluir "${caixinha.nome}" pois possui ${count} movimentação${(count ?? 0) > 1 ? "ões" : ""} registrada${(count ?? 0) > 1 ? "s" : ""}.`;
+    if (Number(caixinha.saldo_atual) > 0)
+      return `O objetivo "${caixinha.nome}" possui saldo de R$ ${Number(caixinha.saldo_atual).toFixed(2)} e não pode ser excluído.\n\nResgate o saldo primeiro ou responda "arquivar" para arquivá-lo.`;
     const { error } = await supabase.from("caixinhas").delete().eq("id", caixinha.id);
     if (error) return `Erro ao excluir objetivo: ${error.message}`;
     await carregarContexto();
     return `✅ Objetivo "${caixinha.nome}" excluído com sucesso!`;
+  };
+
+  const arquivarCaixinha = async (data: Record<string, any>): Promise<string> => {
+    const nomeCaixa = data.caixinha_name || data.nome || "";
+    const caixinha = caixinhasUsuario.find((c) =>
+      c.id === Number(data.caixinha_id) || c.nome.toLowerCase().includes(nomeCaixa.toLowerCase())
+    );
+    if (!caixinha) return "Objetivo não encontrado.";
+    const { error } = await supabase.from("caixinhas").update({ arquivado: true } as any).eq("id", caixinha.id);
+    if (error) return `Erro ao arquivar objetivo: ${error.message}`;
+    await carregarContexto();
+    return `✅ Objetivo "${caixinha.nome}" arquivado com sucesso!`;
   };
 
   const projetarSaldo = async (data: Record<string, any>): Promise<string> => {
@@ -843,11 +1029,14 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
         switch (intent) {
           case "create_transaction": resultado = await criarTransacao(mergedData); break;
           case "create_account": resultado = await criarConta(mergedData); break;
+          case "edit_account": resultado = await editarConta(mergedData); break;
           case "create_category": resultado = await criarCategoria(mergedData); break;
+          case "edit_category": resultado = await editarCategoria(mergedData); break;
           case "delete_category": resultado = await deletarOuArquivarCategoria(mergedData); break;
           case "create_caixinha": resultado = await criarCaixinha(mergedData); break;
           case "move_caixinha": resultado = await movimentarCaixinha(mergedData); break;
           case "delete_caixinha": resultado = await deletarCaixinha(mergedData); break;
+          case "archive_caixinha": resultado = await arquivarCaixinha(mergedData); break;
           case "confirm_pending": resultado = await confirmarPendente(mergedData); break;
           case "delete_transaction": resultado = await deletarTransacao(mergedData); break;
           case "archive_account": resultado = await arquivarConta(mergedData); break;
@@ -928,8 +1117,14 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
           case "create_account":
             resultado = await criarConta(mergedData);
             break;
+          case "edit_account":
+            resultado = await editarConta(mergedData);
+            break;
           case "create_category":
             resultado = await criarCategoria(mergedData);
+            break;
+          case "edit_category":
+            resultado = await editarCategoria(mergedData);
             break;
           case "delete_category":
             resultado = await deletarOuArquivarCategoria(mergedData);
@@ -942,6 +1137,9 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
             break;
           case "delete_caixinha":
             resultado = await deletarCaixinha(mergedData);
+            break;
+          case "archive_caixinha":
+            resultado = await arquivarCaixinha(mergedData);
             break;
           case "confirm_pending":
             resultado = await confirmarPendente(mergedData);
