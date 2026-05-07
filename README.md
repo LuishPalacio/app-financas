@@ -145,7 +145,7 @@ Escaneie o QR code com o app **Expo Go** ou rode em emulador iOS/Android.
 Projeto desenvolvido como parte da minha transição para desenvolvimento mobile. Aberto a feedback, sugestões e oportunidades.
 
 - 💼 LinkedIn: *www.linkedin.com/in/luishpalacio*
-- 📧 Email: **luispalacio1617@gmail.com
+- 📧 Email: *luispalacio1617@gmail.com*
 
 ---
 
