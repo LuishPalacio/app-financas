@@ -21,6 +21,7 @@ export type ReconcileEntryInput = {
   existingStatus?: "pendente" | "paga";
   invoiceCardId?: number;
   invoiceMonth?: string;
+  reconciliationReceiptId?: number;
 };
 
 export type ReconcileEntryResult = { erro: string | null; sucesso?: string };
@@ -54,6 +55,8 @@ function reconciliationError(message: string): string {
     RECONCILIATION_DESCRIPTION_INVALID: "Informe uma descrição de até 100 caracteres.",
     RECONCILIATION_COMPLETION_NOT_CONFIRMED: "O banco não confirmou a baixa. Nenhuma conciliação foi gravada.",
     RECONCILIATION_CREATION_NOT_CONFIRMED: "O banco não confirmou o novo lançamento. Nenhuma conciliação foi gravada.",
+    RECONCILIATION_PARTIAL_RECEIPT_UNAVAILABLE: "Esta conciliação mudou. Reimporte o extrato antes de continuar.",
+    RECONCILIATION_PARTIAL_AMOUNT_CHANGED: "O valor restante desta conciliação mudou. Reimporte o extrato.",
   };
   return code ? messages[code] ?? traduzirErro(code) : traduzirErro(message);
 }
@@ -79,6 +82,28 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return { erro: "Sua sessão expirou. Entre novamente." };
+  if (input.mode === "existing" && input.reconciliationReceiptId) {
+    if (transactionIds.length !== 1 || !Number.isSafeInteger(input.reconciliationReceiptId) || input.reconciliationReceiptId <= 0) {
+      return { erro: "Selecione um único lançamento para completar esta conciliação." };
+    }
+    const { data, error } = await supabase.rpc("reconcile_reopened_bank_statement_entry", {
+      p_receipt_id: input.reconciliationReceiptId,
+      p_entry_fingerprint: input.fingerprint,
+      p_entry_date: input.date,
+      p_entry_type: input.type,
+      p_entry_amount: input.amount,
+      p_transaction_id: transactionIds[0],
+      p_idempotency_key: input.requestId,
+      p_expected_user_id: user.id,
+      p_client_created_at: new Date().toISOString(),
+    });
+    if (error) return { erro: reconciliationError(error.message) };
+    if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
+      return { erro: "O servidor não confirmou a reconciliação da parte reaberta." };
+    }
+    revalidatePath("/"); revalidatePath("/conciliacao"); revalidatePath("/transacoes"); revalidatePath("/contas"); revalidatePath("/relatorios");
+    return { erro: null, sucesso: "A parte reaberta foi conciliada novamente." };
+  }
   if (input.mode === "existing" && input.existingKind === "invoice") {
     if (transactionIds.length !== 1 || !Number.isSafeInteger(input.invoiceCardId) || Number(input.invoiceCardId) <= 0
       || !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.invoiceMonth ?? "") || input.type !== "despesa") {

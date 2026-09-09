@@ -21,7 +21,9 @@ export type ReconciliationCandidate = {
   invoiceMonth?: string;
 };
 
-type ImportedEntry = StatementEntry & { fingerprint: string };
+export type ReconciliationProgress = { receipt_id: number; account_id: number; entry_fingerprint: string; entry_amount: number; reconciled_amount: number };
+
+type ImportedEntry = StatementEntry & { fingerprint: string; reconciliationReceiptId?: number };
 type Draft = {
   mode: "existing" | "new";
   transactionId: number | null;
@@ -35,7 +37,7 @@ type Draft = {
   month: string;
 };
 
-const SESSION_KEY = "finflow:bank-statement-workspace:v1";
+const SESSION_KEY = "finflow:bank-statement-workspace:v2";
 
 type StoredWorkspace = {
   accountId: number;
@@ -132,12 +134,12 @@ export default function ReconciliationWorkspace({
   accounts,
   categories,
   candidates,
-  reconciledFingerprints,
+  reconciliationProgress,
 }: {
   accounts: Conta[];
   categories: Categoria[];
   candidates: ReconciliationCandidate[];
-  reconciledFingerprints: string[];
+  reconciliationProgress: ReconciliationProgress[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [accountId, setAccountId] = useState(0);
@@ -148,7 +150,9 @@ export default function ReconciliationWorkspace({
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
-  const [reconciled, setReconciled] = useState(() => new Set(reconciledFingerprints));
+  const [reconciled, setReconciled] = useState(() => new Set(reconciliationProgress
+    .filter((row) => Number(row.reconciled_amount) >= Number(row.entry_amount))
+    .map((row) => `${row.account_id}:${row.entry_fingerprint}`)));
   const [sessionRestored, setSessionRestored] = useState(false);
   const [interestEntryId, setInterestEntryId] = useState<string | null>(null);
   const [ignoreEntryId, setIgnoreEntryId] = useState<string | null>(null);
@@ -199,7 +203,15 @@ export default function ReconciliationWorkspace({
     try {
       const parsed = parseBankStatement(file.name, await file.text());
       const withHashes = await Promise.all(parsed.map(async (entry) => ({ ...entry, fingerprint: await statementFingerprint(accountId, entry) })));
-      const pending = withHashes.filter((entry) => !reconciled.has(`${accountId}:${entry.fingerprint}`));
+      const progressByFingerprint = new Map(reconciliationProgress
+        .filter((row) => Number(row.account_id) === accountId)
+        .map((row) => [row.entry_fingerprint, row]));
+      const pending = withHashes.flatMap((entry) => {
+        const progress = progressByFingerprint.get(entry.fingerprint);
+        if (!progress) return [entry];
+        const remaining = Math.round((entry.amount - Number(progress.reconciled_amount)) * 100) / 100;
+        return remaining > 0 ? [{ ...entry, amount: remaining, reconciliationReceiptId: Number(progress.receipt_id) }] : [];
+      });
       const nextDrafts: Record<string, Draft> = {};
       for (const entry of pending) {
         const ranked = rankedCandidates(entry, accountId, candidates);
@@ -272,6 +284,7 @@ export default function ReconciliationWorkspace({
       description: draft.description, requestId: draft.requestId, excessAsInterest: excess > 0,
       existingKind: selected?.kind,
       existingStatus: selected?.status,
+      reconciliationReceiptId: entry.reconciliationReceiptId,
       invoiceCardId: selected?.invoiceCardId,
       invoiceMonth: selected?.invoiceMonth,
     });

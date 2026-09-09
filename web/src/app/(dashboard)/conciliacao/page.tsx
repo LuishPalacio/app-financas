@@ -4,10 +4,9 @@ import { dataEfetivaTransacao, descricaoVisivel, getContaDestinoTransferencia, i
 import type { Categoria, Conta, Transacao } from "@/lib/types";
 import type { Cartao, FaturaItem } from "@/lib/types";
 import { groupInvoiceItems } from "@/lib/invoices";
-import ReconciliationWorkspace, { type ReconciliationCandidate } from "./reconciliation-workspace";
+import ReconciliationWorkspace, { type ReconciliationCandidate, type ReconciliationProgress } from "./reconciliation-workspace";
 
 type SummaryRow = { root_transaction_id: number; remaining_value: number };
-type FingerprintRow = { account_id: number; entry_fingerprint: string };
 type ReconciledTransactionRow = { transaction_id: number };
 type TransferCounterpartRow = { transaction_id: number; account_id: number; entry_type: "receita" | "despesa"; description: string; due_date: string; amount: number };
 
@@ -22,7 +21,7 @@ export default async function ReconciliationPage() {
     fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
     supabase.from("cartoes").select("id,user_id,nome,cor,limite,dia_vencimento,dia_fechamento,ativo,version").eq("ativo", true),
     fetchAllRows((from, to) => supabase.from("fatura_itens").select("id,cartao_id,user_id,descricao,valor,data_compra,mes_fatura,parcela_atual,total_parcelas,categoria_id,pago,grupo_parcela_id").eq("pago", false).range(from, to)),
-    supabase.rpc("list_bank_reconciliation_fingerprints"),
+    supabase.rpc("list_bank_reconciliation_progress"),
     supabase.rpc("list_pending_bank_transfer_counterparts"),
     supabase.rpc("list_bank_reconciled_transaction_ids"),
   ]);
@@ -82,7 +81,7 @@ export default async function ReconciliationPage() {
       invoiceCardId: invoice.cardId, invoiceMonth: invoice.invoiceMonth,
     });
   }
-  const fingerprints = fingerprintsResult.error?.code === "PGRST202" ? [] : (fingerprintsResult.data ?? []) as FingerprintRow[];
+  const progress = fingerprintsResult.error?.code === "PGRST202" ? [] : (fingerprintsResult.data ?? []) as ReconciliationProgress[];
 
-  return <ReconciliationWorkspace accounts={accounts} categories={categories} candidates={candidates} reconciledFingerprints={fingerprints.map((row) => `${row.account_id}:${row.entry_fingerprint}`)} />;
+  return <ReconciliationWorkspace accounts={accounts} categories={categories} candidates={candidates} reconciliationProgress={progress} />;
 }
