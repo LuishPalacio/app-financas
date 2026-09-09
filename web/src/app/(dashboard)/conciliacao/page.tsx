@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { dataEfetivaTransacao, descricaoVisivel, getContaDestinoTransferencia, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import type { Categoria, Conta, Transacao } from "@/lib/types";
+import type { Cartao, FaturaItem } from "@/lib/types";
+import { groupInvoiceItems } from "@/lib/invoices";
 import ReconciliationWorkspace, { type ReconciliationCandidate } from "./reconciliation-workspace";
 
 type SummaryRow = { root_transaction_id: number; remaining_value: number };
@@ -13,16 +15,18 @@ const PAYMENT_SUMMARY_BATCH_SIZE = 500;
 
 export default async function ReconciliationPage() {
   const supabase = await createClient();
-  const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult] = await Promise.all([
+  const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, cardsResult, invoiceItemsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult] = await Promise.all([
     supabase.auth.getClaims(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome"),
     fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
+    supabase.from("cartoes").select("id,user_id,nome,cor,limite,dia_vencimento,dia_fechamento,ativo,version").eq("ativo", true),
+    fetchAllRows((from, to) => supabase.from("fatura_itens").select("id,cartao_id,user_id,descricao,valor,data_compra,mes_fatura,parcela_atual,total_parcelas,categoria_id,pago,grupo_parcela_id").eq("pago", false).range(from, to)),
     supabase.rpc("list_bank_reconciliation_fingerprints"),
     supabase.rpc("list_pending_bank_transfer_counterparts"),
     supabase.rpc("list_bank_reconciled_transaction_ids"),
   ]);
-  if (accountsResult.error || categoriesResult.error || transactionsResult.error) throw new Error("Não foi possível preparar a conciliação agora.");
+  if (accountsResult.error || categoriesResult.error || transactionsResult.error || cardsResult.error || invoiceItemsResult.error) throw new Error("Não foi possível preparar a conciliação agora.");
   if (typeof auth?.claims.sub !== "string") throw new Error("Sua sessão expirou. Entre novamente.");
   const accounts = (accountsResult.data ?? []) as Conta[];
   const categories = ((categoriesResult.data ?? []) as Categoria[]).filter((category) => category.ativa === true || category.ativa === 1);
@@ -63,6 +67,19 @@ export default async function ReconciliationPage() {
       id: Number(row.transaction_id), accountId: Number(row.account_id), categoryId: null,
       type: row.entry_type, description: descricaoVisivel(row.description), dueDate: row.due_date,
       remainingValue: Number(row.amount), kind: "transfer", status: "pendente",
+    });
+  }
+  const invoices = groupInvoiceItems((invoiceItemsResult.data ?? []) as FaturaItem[], (cardsResult.data ?? []) as Cartao[])
+    .filter((invoice) => !invoice.paid && invoice.total > 0);
+  for (const account of accounts) for (const invoice of invoices) {
+    // IDs negativos são apenas chaves locais da lista; nenhuma transação
+    // artificial é criada para representar a fatura.
+    const serial = invoice.cardId * 100_000 + Number(invoice.invoiceMonth.replace("-", ""));
+    candidates.push({
+      id: -serial, accountId: account.id, categoryId: null, type: "despesa",
+      description: `Fatura ${invoice.cardName}`, dueDate: invoice.dueDate,
+      remainingValue: invoice.total, kind: "invoice", status: "pendente",
+      invoiceCardId: invoice.cardId, invoiceMonth: invoice.invoiceMonth,
     });
   }
   const fingerprints = fingerprintsResult.error?.code === "PGRST202" ? [] : (fingerprintsResult.data ?? []) as FingerprintRow[];

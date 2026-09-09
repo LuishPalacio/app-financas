@@ -17,24 +17,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // getClaims() verifica o JWT localmente (sem round-trip ao servidor de auth
   // a cada navegação); o proxy.ts já fez a verificação forte contra o
   // servidor antes de deixar a requisição chegar aqui.
-  const { data } = await supabase.auth.getClaims();
+  const [{ data }, { data: userData }] = await Promise.all([
+    supabase.auth.getClaims(),
+    supabase.auth.getUser(),
+  ]);
   if (typeof data?.claims.sub === "string") {
     // Recompõe de forma idempotente a janela móvel das séries fixas. Uma
     // indisponibilidade momentânea não deve impedir o acesso ao painel.
     await supabase.rpc("refresh_my_recurring_schedules");
   }
   const email = typeof data?.claims.email === "string" ? data.claims.email : undefined;
-  const metadata = data?.claims.user_metadata as Record<string, unknown> | undefined;
-  // nome_usuario só existe se o usuário passou por cadastro por e-mail (que
-  // pede o nome) ou já editou o perfil. Quem entrou primeiro pelo Google
-  // nunca preenche esse campo — sem o fallback pro full_name que o próprio
-  // Google já manda, a sidebar mostrava "Usuário" genérico até o dia em que
-  // a pessoa fosse mudar o nome nas configurações.
-  const nome = typeof metadata?.nome_usuario === "string" && metadata.nome_usuario.trim()
-    ? metadata.nome_usuario.trim()
-    : typeof metadata?.full_name === "string" && metadata.full_name.trim()
-      ? metadata.full_name.trim()
-      : email?.split("@")[0] ?? "Usuário";
+  // getClaims() pode continuar com o JWT anterior logo depois de uma edição de
+  // perfil. getUser() mantém a edição e o nome inicial do Google sincronizados.
+  const metadata = (userData.user?.user_metadata ?? data?.claims.user_metadata) as Record<string, unknown> | undefined;
+  const nameCandidates = [metadata?.nome_usuario, metadata?.full_name, metadata?.name];
+  const nome = nameCandidates.find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim()
+    ?? email?.split("@")[0]
+    ?? "Usuário";
   const birthDate = typeof metadata?.data_nascimento === "string" ? metadata.data_nascimento : "";
   const age = ageFromIsoDate(birthDate);
   // Uma string preenchida, mas inválida, não pode contornar a pendência.

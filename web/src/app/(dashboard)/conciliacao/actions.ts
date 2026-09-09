@@ -17,8 +17,10 @@ export type ReconcileEntryInput = {
   description: string;
   requestId: string;
   excessAsInterest?: boolean;
-  existingKind?: "standard" | "transfer" | "goal";
+  existingKind?: "standard" | "transfer" | "goal" | "invoice";
   existingStatus?: "pendente" | "paga";
+  invoiceCardId?: number;
+  invoiceMonth?: string;
 };
 
 export type ReconcileEntryResult = { erro: string | null; sucesso?: string };
@@ -45,6 +47,8 @@ function reconciliationError(message: string): string {
     RECONCILIATION_EXCESS_CONFIRMATION_REQUIRED: "Confirme se a diferença deve ser registrada como juros.",
     RECONCILIATION_TRANSFER_REQUIRES_EXACT_VALUE: "Transferências entre contas só podem ser conciliadas pelo valor integral agendado.",
     RECONCILIATION_GOAL_REQUIRES_EXACT_VALUE: "Movimentos de caixinha só podem ser conciliados pelo valor integral agendado.",
+    RECONCILIATION_INVOICE_UNAVAILABLE: "Esta fatura mudou ou já foi paga. Atualize a página.",
+    RECONCILIATION_INVOICE_AMOUNT_MISMATCH: "O valor do extrato não pode superar o saldo atual da fatura.",
     TRANSACTION_ADJUSTMENT_NOT_ALLOWED_BEFORE_DUE_DATE: "Juros só podem ser registrados depois da data agendada.",
     RECONCILIATION_CATEGORY_INVALID: "Selecione uma categoria ativa e compatível.",
     RECONCILIATION_DESCRIPTION_INVALID: "Informe uma descrição de até 100 caracteres.",
@@ -63,7 +67,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
   }
   const transactionIds = Array.from(new Set(input.transactionIds ?? (input.transactionId ? [input.transactionId] : [])));
   if (input.mode === "existing" && (transactionIds.length < 1 || transactionIds.length > 50
-    || transactionIds.some((id) => !Number.isSafeInteger(id) || id <= 0))) {
+    || transactionIds.some((id) => !Number.isSafeInteger(id) || (input.existingKind !== "invoice" && id <= 0)))) {
     return { erro: "Selecione o lançamento que será conciliado." };
   }
   if (input.mode === "new" && (!Number.isSafeInteger(input.categoryId) || Number(input.categoryId) <= 0)) {
@@ -75,6 +79,34 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return { erro: "Sua sessão expirou. Entre novamente." };
+  if (input.mode === "existing" && input.existingKind === "invoice") {
+    if (transactionIds.length !== 1 || !Number.isSafeInteger(input.invoiceCardId) || Number(input.invoiceCardId) <= 0
+      || !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.invoiceMonth ?? "") || input.type !== "despesa") {
+      return { erro: "A fatura selecionada é inválida." };
+    }
+    const { data, error } = await supabase.rpc("reconcile_bank_invoice_entry", {
+      p_account_id: input.accountId,
+      p_entry_fingerprint: input.fingerprint,
+      p_entry_date: input.date,
+      p_entry_amount: input.amount,
+      p_card_id: input.invoiceCardId,
+      p_invoice_month: input.invoiceMonth,
+      p_idempotency_key: input.requestId,
+      p_expected_user_id: user.id,
+      p_client_created_at: new Date().toISOString(),
+    });
+    if (error) {
+      console.error("[bank-invoice-reconciliation] RPC failed", { code: error.code, message: error.message, details: error.details });
+      return { erro: error.code === "PGRST202"
+        ? "A atualização do banco para conciliar faturas ainda não foi aplicada. Nenhuma alteração financeira foi feita."
+        : reconciliationError(error.message) };
+    }
+    if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
+      return { erro: "O servidor não confirmou o pagamento e a conciliação da fatura." };
+    }
+    revalidatePath("/"); revalidatePath("/conciliacao"); revalidatePath("/transacoes"); revalidatePath("/contas"); revalidatePath("/relatorios"); revalidatePath("/cartoes");
+    return { erro: null, sucesso: "Fatura paga e conciliada com a movimentação bancária." };
+  }
   if (input.mode === "existing" && transactionIds.length > 1) {
     const { data, error } = await supabase.rpc("reconcile_bank_statement_entries", {
       p_account_id: input.accountId,

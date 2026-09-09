@@ -33,6 +33,7 @@ GoogleService-Info.plist
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+/.codex-web-dev.*.log
 
 # macOS
 .DS_Store

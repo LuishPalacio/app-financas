@@ -15,8 +15,10 @@ export type ReconciliationCandidate = {
   description: string;
   dueDate: string;
   remainingValue: number;
-  kind: "standard" | "transfer" | "goal";
+  kind: "standard" | "transfer" | "goal" | "invoice";
   status: "pendente" | "paga";
+  invoiceCardId?: number;
+  invoiceMonth?: string;
 };
 
 type ImportedEntry = StatementEntry & { fingerprint: string };
@@ -245,7 +247,7 @@ export default function ReconciliationWorkspace({
     const selected = selectedCandidates[0];
     const selectedTotal = Math.round(selectedCandidates.reduce((sum, candidate) => sum + candidate.remainingValue, 0) * 100) / 100;
     if (selectedIds.length > 1 && (selectedCandidates.length !== selectedIds.length
-      || selectedCandidates.some((candidate) => candidate.kind === "transfer")
+      || selectedCandidates.some((candidate) => candidate.kind === "transfer" || candidate.kind === "invoice")
       || Math.round(selectedTotal * 100) !== Math.round(entry.amount * 100))) {
       setDrafts((current) => ({ ...current, [entry.id]: { ...draft, error: "Selecione lançamentos ou movimentos de caixinha cuja soma seja exatamente igual ao valor do extrato." } }));
       return;
@@ -270,6 +272,8 @@ export default function ReconciliationWorkspace({
       description: draft.description, requestId: draft.requestId, excessAsInterest: excess > 0,
       existingKind: selected?.kind,
       existingStatus: selected?.status,
+      invoiceCardId: selected?.invoiceCardId,
+      invoiceMonth: selected?.invoiceMonth,
     });
     if (result.erro) {
       setDrafts((current) => ({ ...current, [entry.id]: { ...current[entry.id], busy: false, error: result.erro } }));

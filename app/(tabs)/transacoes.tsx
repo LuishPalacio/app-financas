@@ -224,7 +224,7 @@ export default function TransacoesScreen() {
   const [filtroVencidas, setFiltroVencidas] = useState(false);
   const [filtroHoje, setFiltroHoje] = useState(false);
   const [filtroProximosSeteDias, setFiltroProximosSeteDias] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes">("todos");
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes">("pendentes");
   const [busca, setBusca] = useState("");
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 30;
